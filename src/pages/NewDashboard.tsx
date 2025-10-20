@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { DashboardFilters, FilterState } from "@/components/dashboard/DashboardFilters";
@@ -6,12 +6,16 @@ import { ExecutiveKPIs } from "@/components/dashboard/ExecutiveKPIs";
 import { CashFlowChart } from "@/components/dashboard/CashFlowChart";
 import { ExpensesCategoryChart } from "@/components/dashboard/ExpensesCategoryChart";
 import { ProfitabilityGauges } from "@/components/dashboard/ProfitabilityGauges";
+import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
+import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { useQuery } from "@tanstack/react-query";
-import { format, parseISO, startOfMonth, endOfMonth, subMonths, differenceInDays, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval, startOfWeek, endOfWeek } from "date-fns";
+import { format, parseISO, differenceInDays, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval, startOfWeek, endOfWeek, endOfMonth, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useNavigate } from "react-router-dom";
 
 const NewDashboard = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<FilterState | null>(null);
 
   // Buscar contas
@@ -255,6 +259,47 @@ const NewDashboard = () => {
     faturamentoAtual: kpiData.faturamentoBruto,
   };
 
+  // Gerar alertas inteligentes
+  const alerts = [];
+  
+  // Alerta de fluxo de caixa negativo
+  if (kpiData.diasReserva < 30) {
+    alerts.push({
+      id: "1",
+      type: "critical" as const,
+      title: "Fluxo de caixa crítico!",
+      message: `Apenas ${kpiData.diasReserva} dias de reserva. Atenção necessária para evitar problemas de liquidez.`,
+      action: {
+        label: "Ver Projeção",
+        onClick: () => navigate("/fluxo-caixa"),
+      },
+    });
+  }
+
+  // Alerta de gastos elevados
+  if (kpiData.margens.operacional < 20) {
+    alerts.push({
+      id: "2",
+      type: "warning" as const,
+      title: "Margem operacional baixa",
+      message: `Margem de ${kpiData.margens.operacional.toFixed(1)}% está abaixo do ideal (>30%). Revise seus custos.`,
+      action: {
+        label: "Ver Despesas",
+        onClick: () => navigate("/transacoes"),
+      },
+    });
+  }
+
+  // Alerta informativo de crescimento
+  if (kpiData.variacoes.faturamento > 10) {
+    alerts.push({
+      id: "3",
+      type: "info" as const,
+      title: "Crescimento positivo!",
+      message: `Faturamento cresceu ${kpiData.variacoes.faturamento.toFixed(1)}% em relação ao período anterior. Continue assim! 🎉`,
+    });
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -264,40 +309,58 @@ const NewDashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Filtros */}
-      <DashboardFilters
-        onFiltersChange={setFilters}
-        contas={contas}
-        categorias={categorias}
-      />
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto p-6 space-y-6">
+        {/* Filtros */}
+        <DashboardFilters
+          onFiltersChange={setFilters}
+          contas={contas}
+          categorias={categorias}
+        />
 
-      {filters && (
-        <>
-          {/* Header */}
-          <div>
-            <h1 className="text-3xl font-bold">Dashboard Executivo</h1>
-            <p className="text-muted-foreground">
-              Visão completa das finanças - {format(parseISO(filters.dataInicio), "dd/MM/yyyy")} até {format(parseISO(filters.dataFim), "dd/MM/yyyy")}
-            </p>
-          </div>
+        {filters && (
+          <>
+            {/* Header */}
+            <div className="mb-8">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-primary-hover bg-clip-text text-transparent">
+                Dashboard Executivo
+              </h1>
+              <p className="text-muted-foreground mt-2">
+                Visão completa das finanças • {format(parseISO(filters.dataInicio), "dd 'de' MMMM", { locale: ptBR })} até {format(parseISO(filters.dataFim), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              </p>
+            </div>
 
-          {/* KPIs Principais */}
-          <ExecutiveKPIs data={kpiData} />
+            {/* Layout Principal: Grid com sidebar */}
+            <div className="grid lg:grid-cols-[1fr_320px] gap-6">
+              {/* Coluna Principal */}
+              <div className="space-y-6">
+                {/* KPIs Principais */}
+                <ExecutiveKPIs data={kpiData} />
 
-          {/* Gráfico de Fluxo de Caixa */}
-          <CashFlowChart data={dadosFluxo} granularidade={filters.granularidade} />
+                {/* Gráfico de Fluxo de Caixa */}
+                <CashFlowChart data={dadosFluxo} granularidade={filters.granularidade} />
 
-          {/* Grid de 2 colunas */}
-          <div className="grid lg:grid-cols-1 gap-6">
-            {/* Despesas por Categoria */}
-            <ExpensesCategoryChart data={dadosCategoria} totalDespesas={kpiData.gastosOperacionais} />
+                {/* Despesas por Categoria */}
+                <ExpensesCategoryChart data={dadosCategoria} totalDespesas={kpiData.gastosOperacionais} />
 
-            {/* Indicadores de Rentabilidade */}
-            <ProfitabilityGauges data={dadosRentabilidade} />
-          </div>
-        </>
-      )}
+                {/* Indicadores de Rentabilidade */}
+                <ProfitabilityGauges data={dadosRentabilidade} />
+
+                {/* Transações Recentes */}
+                <RecentTransactions 
+                  transactions={transacoes as any}
+                  onViewAll={() => navigate("/transacoes")}
+                />
+              </div>
+
+              {/* Sidebar de Alertas */}
+              <div>
+                <AlertsPanel alerts={alerts} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };
