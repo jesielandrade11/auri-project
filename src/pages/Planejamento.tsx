@@ -34,11 +34,32 @@ interface Budget {
   };
 }
 
+interface Transacao {
+  id: string;
+  descricao: string;
+  valor: number;
+  data_transacao: string;
+  tipo: string;
+  status: string;
+  categoria_id: string | null;
+  centro_custo_id: string | null;
+  conciliado: boolean;
+  categoria?: {
+    id: string;
+    nome: string;
+    tipo: string;
+  };
+  centro_custo?: {
+    id: string;
+    nome: string;
+  };
+}
+
 export default function Planejamento() {
   const [open, setOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [selectedMonthDetails, setSelectedMonthDetails] = useState<{ month: number; type: 'receitas' | 'despesas' | 'saldo'; budgets: Budget[] }>({ month: 0, type: 'receitas', budgets: [] });
+  const [selectedMonthDetails, setSelectedMonthDetails] = useState<{ month: number; type: 'receitas' | 'despesas' | 'saldo'; budgets: Budget[]; transacoes: Transacao[] }>({ month: 0, type: 'receitas', budgets: [], transacoes: [] });
   const [anoFiltro, setAnoFiltro] = useState(new Date().getFullYear());
   const [formData, setFormData] = useState({
     mes_referencia: "",
@@ -95,6 +116,28 @@ export default function Planejamento() {
       
       if (error) throw error;
       return data as Budget[];
+    },
+  });
+
+  const { data: transacoes } = useQuery({
+    queryKey: ["transacoes-ano", anoFiltro],
+    queryFn: async () => {
+      const startDate = `${anoFiltro}-01-01`;
+      const endDate = `${anoFiltro}-12-31`;
+      
+      const { data, error } = await supabase
+        .from("transacoes")
+        .select(`
+          *,
+          categoria:categoria_id(id, nome, tipo),
+          centro_custo:centro_custo_id(id, nome)
+        `)
+        .gte("data_transacao", startDate)
+        .lte("data_transacao", endDate)
+        .order("data_transacao", { ascending: false });
+      
+      if (error) throw error;
+      return data as Transacao[];
     },
   });
 
@@ -170,12 +213,22 @@ export default function Planejamento() {
     const budgetsMes = budgetsByMonth[monthIndex + 1];
     const filteredBudgets = type === 'saldo' 
       ? budgetsMes 
-      : budgetsMes.filter((b) => b.categoria?.tipo === type.slice(0, -1)); // Remove 's' from 'receitas'/'despesas'
+      : budgetsMes.filter((b) => b.categoria?.tipo === type.slice(0, -1));
+    
+    const transacoesMes = transacoes?.filter((t) => {
+      const mesTransacao = new Date(t.data_transacao).getMonth() + 1;
+      return mesTransacao === (monthIndex + 1);
+    }) || [];
+    
+    const filteredTransacoes = type === 'saldo'
+      ? transacoesMes
+      : transacoesMes.filter((t) => t.categoria?.tipo === type.slice(0, -1));
     
     setSelectedMonthDetails({
       month: monthIndex + 1,
       type,
-      budgets: filteredBudgets
+      budgets: filteredBudgets,
+      transacoes: filteredTransacoes,
     });
     setDetailsDialogOpen(true);
   };
@@ -372,6 +425,9 @@ export default function Planejamento() {
                     <TableHead>Receitas Planejadas</TableHead>
                     <TableHead>Despesas Planejadas</TableHead>
                     <TableHead>Saldo Previsto</TableHead>
+                    <TableHead>Realizado</TableHead>
+                    <TableHead>A Vencer</TableHead>
+                    <TableHead>Líquido</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -384,6 +440,30 @@ export default function Planejamento() {
                       .filter((b) => b.categoria?.tipo === "despesa")
                       .reduce((acc, b) => acc + b.valor_planejado, 0);
                     const saldo = receitas - despesas;
+
+                    const transacoesMes = transacoes?.filter((t) => {
+                      const mesTransacao = new Date(t.data_transacao).getMonth() + 1;
+                      return mesTransacao === (index + 1);
+                    }) || [];
+
+                    const receitasRealizadas = transacoesMes
+                      .filter((t) => t.tipo === "receita" && t.conciliado === true)
+                      .reduce((acc, t) => acc + Number(t.valor), 0);
+                    const despesasRealizadas = transacoesMes
+                      .filter((t) => t.tipo === "despesa" && t.conciliado === true)
+                      .reduce((acc, t) => acc + Number(t.valor), 0);
+                    const realizado = receitasRealizadas - despesasRealizadas;
+
+                    const hoje = new Date();
+                    const receitasAVencer = transacoesMes
+                      .filter((t) => t.tipo === "receita" && t.conciliado === false && new Date(t.data_transacao) >= hoje)
+                      .reduce((acc, t) => acc + Number(t.valor), 0);
+                    const despesasAVencer = transacoesMes
+                      .filter((t) => t.tipo === "despesa" && t.conciliado === false && new Date(t.data_transacao) >= hoje)
+                      .reduce((acc, t) => acc + Number(t.valor), 0);
+                    const aVencer = receitasAVencer - despesasAVencer;
+
+                    const liquido = saldo - realizado + aVencer;
 
                     return (
                       <TableRow key={index}>
@@ -424,6 +504,24 @@ export default function Planejamento() {
                             <Eye className="h-4 w-4 opacity-50" />
                           </div>
                         </TableCell>
+                        <TableCell className={`${realizado >= 0 ? "text-blue-600" : "text-red-600"}`}>
+                          {new Intl.NumberFormat("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          }).format(realizado)}
+                        </TableCell>
+                        <TableCell className={`${aVencer >= 0 ? "text-amber-600" : "text-red-600"}`}>
+                          {new Intl.NumberFormat("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          }).format(aVencer)}
+                        </TableCell>
+                        <TableCell className={`${liquido >= 0 ? "text-green-600" : "text-red-600"} font-semibold`}>
+                          {new Intl.NumberFormat("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          }).format(liquido)}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -436,52 +534,130 @@ export default function Planejamento() {
 
       {/* Dialog de Detalhes */}
       <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               Detalhes - {meses[selectedMonthDetails.month - 1]} ({selectedMonthDetails.type === 'receitas' ? 'Receitas' : selectedMonthDetails.type === 'despesas' ? 'Despesas' : 'Todas'})
             </DialogTitle>
           </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Categoria</TableHead>
-                <TableHead>Centro de Custo</TableHead>
-                <TableHead>Valor Planejado</TableHead>
-                <TableHead>Observações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {selectedMonthDetails.budgets.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Nenhum planejamento encontrado
-                  </TableCell>
-                </TableRow>
-              ) : (
-                selectedMonthDetails.budgets.map((budget) => (
-                  <TableRow key={budget.id}>
-                    <TableCell>
-                      {budget.categoria?.nome || "-"}
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({budget.categoria?.tipo})
-                      </span>
-                    </TableCell>
-                    <TableCell>{budget.centro_custo?.nome || "-"}</TableCell>
-                    <TableCell className={budget.categoria?.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}>
-                      {new Intl.NumberFormat("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      }).format(budget.valor_planejado)}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {budget.observacoes || "-"}
-                    </TableCell>
+          
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                📋 Planejamentos
+              </h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead>Centro de Custo</TableHead>
+                    <TableHead>Valor Planejado</TableHead>
+                    <TableHead>Observações</TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                </TableHeader>
+                <TableBody>
+                  {selectedMonthDetails.budgets.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                        Nenhum planejamento encontrado
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    selectedMonthDetails.budgets.map((budget) => (
+                      <TableRow key={budget.id}>
+                        <TableCell>
+                          {budget.categoria?.nome || "-"}
+                          <span className="text-xs text-muted-foreground ml-2">
+                            ({budget.categoria?.tipo})
+                          </span>
+                        </TableCell>
+                        <TableCell>{budget.centro_custo?.nome || "-"}</TableCell>
+                        <TableCell className={budget.categoria?.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}>
+                          {new Intl.NumberFormat("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          }).format(budget.valor_planejado)}
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate">
+                          {budget.observacoes || "-"}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                ✅ Transações Realizadas
+              </h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead>Centro de Custo</TableHead>
+                    <TableHead>Valor</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedMonthDetails.transacoes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        Nenhuma transação realizada
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    selectedMonthDetails.transacoes.map((transacao) => (
+                      <TableRow key={transacao.id}>
+                        <TableCell>
+                          {new Date(transacao.data_transacao).toLocaleDateString("pt-BR")}
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate">
+                          {transacao.descricao}
+                        </TableCell>
+                        <TableCell>{transacao.categoria?.nome || "-"}</TableCell>
+                        <TableCell>{transacao.centro_custo?.nome || "-"}</TableCell>
+                        <TableCell className={transacao.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}>
+                          {new Intl.NumberFormat("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          }).format(Number(transacao.valor))}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="border-t pt-4">
+              <div className="flex justify-between font-semibold">
+                <span>Total Planejado:</span>
+                <span className={selectedMonthDetails.type === 'receitas' ? 'text-green-600' : 'text-red-600'}>
+                  {new Intl.NumberFormat("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  }).format(
+                    selectedMonthDetails.budgets.reduce((acc, b) => acc + b.valor_planejado, 0)
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between font-semibold mt-2">
+                <span>Total Realizado:</span>
+                <span className={selectedMonthDetails.type === 'receitas' ? 'text-green-600' : 'text-red-600'}>
+                  {new Intl.NumberFormat("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  }).format(
+                    selectedMonthDetails.transacoes.reduce((acc, t) => acc + Number(t.valor), 0)
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

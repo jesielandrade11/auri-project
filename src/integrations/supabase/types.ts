@@ -14,7 +14,371 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      budgets: {
+        Row: {
+          categoria_id: string | null
+          centro_custo_id: string | null
+          created_at: string | null
+          id: string
+          mes_referencia: string
+          observacoes: string | null
+          percentual_utilizado: number | null
+          user_id: string
+          valor_planejado: number
+          valor_realizado: number | null
+        }
+        Insert: {
+          categoria_id?: string | null
+          centro_custo_id?: string | null
+          created_at?: string | null
+          id?: string
+          mes_referencia: string
+          observacoes?: string | null
+          percentual_utilizado?: number | null
+          user_id: string
+          valor_planejado: number
+          valor_realizado?: number | null
+        }
+        Update: {
+          categoria_id?: string | null
+          centro_custo_id?: string | null
+          created_at?: string | null
+          id?: string
+          mes_referencia?: string
+          observacoes?: string | null
+          percentual_utilizado?: number | null
+          user_id?: string
+          valor_planejado?: number
+          valor_realizado?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budgets_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budgets_centro_custo_id_fkey"
+            columns: ["centro_custo_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      categorias: {
+        Row: {
+          ativo: boolean | null
+          categoria_pai_id: string | null
+          codigo_contabil: string | null
+          cor: string | null
+          created_at: string | null
+          descricao: string | null
+          dre_grupo: string | null
+          fixa_variavel: string | null
+          icone: string | null
+          id: string
+          nivel: number | null
+          nome: string
+          tipo: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean | null
+          categoria_pai_id?: string | null
+          codigo_contabil?: string | null
+          cor?: string | null
+          created_at?: string | null
+          descricao?: string | null
+          dre_grupo?: string | null
+          fixa_variavel?: string | null
+          icone?: string | null
+          id?: string
+          nivel?: number | null
+          nome: string
+          tipo: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean | null
+          categoria_pai_id?: string | null
+          codigo_contabil?: string | null
+          cor?: string | null
+          created_at?: string | null
+          descricao?: string | null
+          dre_grupo?: string | null
+          fixa_variavel?: string | null
+          icone?: string | null
+          id?: string
+          nivel?: number | null
+          nome?: string
+          tipo?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "categorias_categoria_pai_id_fkey"
+            columns: ["categoria_pai_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      centros_custo: {
+        Row: {
+          ativo: boolean | null
+          codigo: string
+          created_at: string | null
+          id: string
+          nome: string
+          orcamento_mensal: number | null
+          tipo: string | null
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean | null
+          codigo: string
+          created_at?: string | null
+          id?: string
+          nome: string
+          orcamento_mensal?: number | null
+          tipo?: string | null
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean | null
+          codigo?: string
+          created_at?: string | null
+          id?: string
+          nome?: string
+          orcamento_mensal?: number | null
+          tipo?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      contas_bancarias: {
+        Row: {
+          ativo: boolean | null
+          created_at: string | null
+          data_abertura: string | null
+          id: string
+          nome_banco: string
+          numero_conta: string | null
+          saldo_atual: number | null
+          saldo_inicial: number | null
+          tipo_conta: string | null
+          ultima_sincronizacao: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean | null
+          created_at?: string | null
+          data_abertura?: string | null
+          id?: string
+          nome_banco: string
+          numero_conta?: string | null
+          saldo_atual?: number | null
+          saldo_inicial?: number | null
+          tipo_conta?: string | null
+          ultima_sincronizacao?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean | null
+          created_at?: string | null
+          data_abertura?: string | null
+          id?: string
+          nome_banco?: string
+          numero_conta?: string | null
+          saldo_atual?: number | null
+          saldo_inicial?: number | null
+          tipo_conta?: string | null
+          ultima_sincronizacao?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      dda_boletos: {
+        Row: {
+          beneficiario: string
+          codigo_barras: string | null
+          conta_bancaria_id: string
+          created_at: string
+          data_vencimento: string
+          id: string
+          linha_digitavel: string | null
+          observacoes: string | null
+          status: string
+          transacao_id: string | null
+          updated_at: string
+          user_id: string
+          valor: number
+        }
+        Insert: {
+          beneficiario: string
+          codigo_barras?: string | null
+          conta_bancaria_id: string
+          created_at?: string
+          data_vencimento: string
+          id?: string
+          linha_digitavel?: string | null
+          observacoes?: string | null
+          status?: string
+          transacao_id?: string | null
+          updated_at?: string
+          user_id: string
+          valor: number
+        }
+        Update: {
+          beneficiario?: string
+          codigo_barras?: string | null
+          conta_bancaria_id?: string
+          created_at?: string
+          data_vencimento?: string
+          id?: string
+          linha_digitavel?: string | null
+          observacoes?: string | null
+          status?: string
+          transacao_id?: string | null
+          updated_at?: string
+          user_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dda_boletos_conta_bancaria_id_fkey"
+            columns: ["conta_bancaria_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transacoes: {
+        Row: {
+          anexos: Json | null
+          arquivo_origem: string | null
+          categoria_id: string | null
+          centro_custo_id: string | null
+          classificado_auto: boolean | null
+          conciliado: boolean | null
+          confianca_classificacao: number | null
+          conta_id: string | null
+          created_at: string | null
+          data_competencia: string | null
+          data_conciliacao: string | null
+          data_transacao: string
+          descricao: string
+          descricao_original: string | null
+          hash_duplicata: string | null
+          id: string
+          observacoes: string | null
+          origem: string
+          parcela_numero: number | null
+          parcela_total: number | null
+          recorrencia_id: string | null
+          recorrente: boolean | null
+          status: string | null
+          tags: string[] | null
+          tipo: string
+          updated_at: string | null
+          user_id: string
+          usuario_conciliacao: string | null
+          valor: number
+        }
+        Insert: {
+          anexos?: Json | null
+          arquivo_origem?: string | null
+          categoria_id?: string | null
+          centro_custo_id?: string | null
+          classificado_auto?: boolean | null
+          conciliado?: boolean | null
+          confianca_classificacao?: number | null
+          conta_id?: string | null
+          created_at?: string | null
+          data_competencia?: string | null
+          data_conciliacao?: string | null
+          data_transacao: string
+          descricao: string
+          descricao_original?: string | null
+          hash_duplicata?: string | null
+          id?: string
+          observacoes?: string | null
+          origem: string
+          parcela_numero?: number | null
+          parcela_total?: number | null
+          recorrencia_id?: string | null
+          recorrente?: boolean | null
+          status?: string | null
+          tags?: string[] | null
+          tipo: string
+          updated_at?: string | null
+          user_id: string
+          usuario_conciliacao?: string | null
+          valor: number
+        }
+        Update: {
+          anexos?: Json | null
+          arquivo_origem?: string | null
+          categoria_id?: string | null
+          centro_custo_id?: string | null
+          classificado_auto?: boolean | null
+          conciliado?: boolean | null
+          confianca_classificacao?: number | null
+          conta_id?: string | null
+          created_at?: string | null
+          data_competencia?: string | null
+          data_conciliacao?: string | null
+          data_transacao?: string
+          descricao?: string
+          descricao_original?: string | null
+          hash_duplicata?: string | null
+          id?: string
+          observacoes?: string | null
+          origem?: string
+          parcela_numero?: number | null
+          parcela_total?: number | null
+          recorrencia_id?: string | null
+          recorrente?: boolean | null
+          status?: string | null
+          tags?: string[] | null
+          tipo?: string
+          updated_at?: string | null
+          user_id?: string
+          usuario_conciliacao?: string | null
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transacoes_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transacoes_centro_custo_id_fkey"
+            columns: ["centro_custo_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transacoes_conta_id_fkey"
+            columns: ["conta_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
