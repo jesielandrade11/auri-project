@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Wallet, Receipt, Tag, Building2, TrendingUp, Settings, LogOut, Menu, X, Calendar } from "lucide-react";
+import { LayoutDashboard, Wallet, Receipt, Tag, Building2, TrendingUp, Settings, LogOut, Menu, X, Calendar, Users, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,10 @@ const navItems: NavItem[] = [{
   href: "/centros-custo",
   icon: Building2
 }, {
+  title: "Fornecedores & Clientes",
+  href: "/contrapartes",
+  icon: Users
+}, {
   title: "Planejamento",
   href: "/planejamento",
   icon: Calendar
@@ -42,6 +46,10 @@ const navItems: NavItem[] = [{
   title: "Fluxo de Caixa",
   href: "/fluxo-caixa",
   icon: TrendingUp
+}, {
+  title: "Relatórios",
+  href: "/relatorios/fluxo-caixa",
+  icon: BarChart3
 }, {
   title: "Configurações",
   href: "/configuracoes",

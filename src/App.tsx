@@ -15,6 +15,10 @@ import CentrosCusto from "./pages/CentrosCusto";
 import Planejamento from "./pages/Planejamento";
 import Contas from "./pages/Contas";
 import FluxoCaixa from "./pages/FluxoCaixa";
+import Contrapartes from "./pages/Contrapartes";
+import FluxoCaixaReport from "./pages/reports/FluxoCaixa";
+import DRECentroCusto from "./pages/reports/DRECentroCusto";
+import Aging from "./pages/reports/Aging";
 
 const queryClient = new QueryClient();
 
@@ -40,8 +44,12 @@ const App = () => (
             <Route path="categorizacao" element={<Categorizacao />} />
             <Route path="categorias" element={<Categorias />} />
             <Route path="centros-custo" element={<CentrosCusto />} />
+            <Route path="contrapartes" element={<Contrapartes />} />
             <Route path="planejamento" element={<Planejamento />} />
             <Route path="fluxo-caixa" element={<FluxoCaixa />} />
+            <Route path="relatorios/fluxo-caixa" element={<FluxoCaixaReport />} />
+            <Route path="relatorios/dre" element={<DRECentroCusto />} />
+            <Route path="relatorios/aging" element={<Aging />} />
             <Route path="configuracoes" element={<div className="p-8">Configurações em desenvolvimento</div>} />
           </Route>
           <Route path="*" element={<NotFound />} />
