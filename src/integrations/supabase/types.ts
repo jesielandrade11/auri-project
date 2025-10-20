@@ -14,6 +14,79 @@ export type Database = {
   }
   public: {
     Tables: {
+      alocacoes_transacao: {
+        Row: {
+          categoria_id: string
+          centro_custo_id: string
+          created_at: string | null
+          descricao: string | null
+          id: string
+          transacao_id: string
+          valor: number
+        }
+        Insert: {
+          categoria_id: string
+          centro_custo_id: string
+          created_at?: string | null
+          descricao?: string | null
+          id?: string
+          transacao_id: string
+          valor: number
+        }
+        Update: {
+          categoria_id?: string
+          centro_custo_id?: string
+          created_at?: string | null
+          descricao?: string | null
+          id?: string
+          transacao_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alocacoes_transacao_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alocacoes_transacao_centro_custo_id_fkey"
+            columns: ["centro_custo_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alocacoes_transacao_transacao_id_fkey"
+            columns: ["transacao_id"]
+            isOneToOne: false
+            referencedRelation: "transacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alocacoes_transacao_transacao_id_fkey"
+            columns: ["transacao_id"]
+            isOneToOne: false
+            referencedRelation: "vw_aging"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alocacoes_transacao_transacao_id_fkey"
+            columns: ["transacao_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alocacoes_divergentes"
+            referencedColumns: ["transacao_id"]
+          },
+          {
+            foreignKeyName: "alocacoes_transacao_transacao_id_fkey"
+            columns: ["transacao_id"]
+            isOneToOne: false
+            referencedRelation: "vw_fluxo_caixa"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       budgets: {
         Row: {
           categoria_id: string | null
@@ -71,6 +144,7 @@ export type Database = {
       categorias: {
         Row: {
           ativo: boolean | null
+          caminho: string | null
           categoria_pai_id: string | null
           codigo_contabil: string | null
           cor: string | null
@@ -87,6 +161,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean | null
+          caminho?: string | null
           categoria_pai_id?: string | null
           codigo_contabil?: string | null
           cor?: string | null
@@ -103,6 +178,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean | null
+          caminho?: string | null
           categoria_pai_id?: string | null
           codigo_contabil?: string | null
           cor?: string | null
@@ -130,9 +206,12 @@ export type Database = {
       centros_custo: {
         Row: {
           ativo: boolean | null
+          caminho: string | null
+          centro_pai_id: string | null
           codigo: string
           created_at: string | null
           id: string
+          nivel: number | null
           nome: string
           orcamento_mensal: number | null
           tipo: string | null
@@ -140,9 +219,12 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean | null
+          caminho?: string | null
+          centro_pai_id?: string | null
           codigo: string
           created_at?: string | null
           id?: string
+          nivel?: number | null
           nome: string
           orcamento_mensal?: number | null
           tipo?: string | null
@@ -150,15 +232,26 @@ export type Database = {
         }
         Update: {
           ativo?: boolean | null
+          caminho?: string | null
+          centro_pai_id?: string | null
           codigo?: string
           created_at?: string | null
           id?: string
+          nivel?: number | null
           nome?: string
           orcamento_mensal?: number | null
           tipo?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "centros_custo_centro_pai_id_fkey"
+            columns: ["centro_pai_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contas_bancarias: {
         Row: {
@@ -200,6 +293,51 @@ export type Database = {
           saldo_inicial?: number | null
           tipo_conta?: string | null
           ultima_sincronizacao?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      contrapartes: {
+        Row: {
+          ativo: boolean | null
+          created_at: string | null
+          documento: string | null
+          email: string | null
+          endereco: string | null
+          id: string
+          nome: string
+          observacoes: string | null
+          papel: string
+          telefone: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean | null
+          created_at?: string | null
+          documento?: string | null
+          email?: string | null
+          endereco?: string | null
+          id?: string
+          nome: string
+          observacoes?: string | null
+          papel: string
+          telefone?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean | null
+          created_at?: string | null
+          documento?: string | null
+          email?: string | null
+          endereco?: string | null
+          id?: string
+          nome?: string
+          observacoes?: string | null
+          papel?: string
+          telefone?: string | null
           updated_at?: string | null
           user_id?: string
         }
@@ -271,14 +409,19 @@ export type Database = {
           conciliado: boolean | null
           confianca_classificacao: number | null
           conta_id: string | null
+          contraparte_id: string | null
           created_at: string | null
           data_competencia: string | null
           data_conciliacao: string | null
+          data_pagamento: string | null
           data_transacao: string
+          data_vencimento: string | null
           descricao: string
           descricao_original: string | null
+          forma_pagamento: string | null
           hash_duplicata: string | null
           id: string
+          numero_documento: string | null
           observacoes: string | null
           origem: string
           parcela_numero: number | null
@@ -302,14 +445,19 @@ export type Database = {
           conciliado?: boolean | null
           confianca_classificacao?: number | null
           conta_id?: string | null
+          contraparte_id?: string | null
           created_at?: string | null
           data_competencia?: string | null
           data_conciliacao?: string | null
+          data_pagamento?: string | null
           data_transacao: string
+          data_vencimento?: string | null
           descricao: string
           descricao_original?: string | null
+          forma_pagamento?: string | null
           hash_duplicata?: string | null
           id?: string
+          numero_documento?: string | null
           observacoes?: string | null
           origem: string
           parcela_numero?: number | null
@@ -333,14 +481,19 @@ export type Database = {
           conciliado?: boolean | null
           confianca_classificacao?: number | null
           conta_id?: string | null
+          contraparte_id?: string | null
           created_at?: string | null
           data_competencia?: string | null
           data_conciliacao?: string | null
+          data_pagamento?: string | null
           data_transacao?: string
+          data_vencimento?: string | null
           descricao?: string
           descricao_original?: string | null
+          forma_pagamento?: string | null
           hash_duplicata?: string | null
           id?: string
+          numero_documento?: string | null
           observacoes?: string | null
           origem?: string
           parcela_numero?: number | null
@@ -377,14 +530,92 @@ export type Database = {
             referencedRelation: "contas_bancarias"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "transacoes_contraparte_id_fkey"
+            columns: ["contraparte_id"]
+            isOneToOne: false
+            referencedRelation: "contrapartes"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
     Views: {
-      [_ in never]: never
+      vw_aging: {
+        Row: {
+          contraparte_nome: string | null
+          contraparte_papel: string | null
+          data_vencimento: string | null
+          descricao: string | null
+          dias_atraso: number | null
+          faixa_atraso: string | null
+          id: string | null
+          status: string | null
+          tipo: string | null
+          user_id: string | null
+          valor: number | null
+        }
+        Relationships: []
+      }
+      vw_alocacoes_divergentes: {
+        Row: {
+          descricao: string | null
+          divergencia: number | null
+          transacao_id: string | null
+          valor_alocado: number | null
+          valor_transacao: number | null
+        }
+        Relationships: []
+      }
+      vw_dre_centro_custo: {
+        Row: {
+          categoria_tipo: string | null
+          centro_custo_codigo: string | null
+          centro_custo_id: string | null
+          centro_custo_nome: string | null
+          despesas: number | null
+          dre_grupo: string | null
+          mes_competencia: string | null
+          receitas: number | null
+          resultado: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alocacoes_transacao_centro_custo_id_fkey"
+            columns: ["centro_custo_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vw_fluxo_caixa: {
+        Row: {
+          categoria_nome: string | null
+          centro_custo_nome: string | null
+          contraparte_nome: string | null
+          contraparte_papel: string | null
+          data_pagamento: string | null
+          data_referencia: string | null
+          data_transacao: string | null
+          data_vencimento: string | null
+          descricao: string | null
+          id: string | null
+          status: string | null
+          tipo: string | null
+          tipo_fluxo: string | null
+          user_id: string | null
+          valor: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      atualizar_status_vencidas: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
