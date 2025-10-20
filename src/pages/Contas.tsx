@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { useAccounts } from "@/hooks/useAccounts";
 import { Plus, RefreshCw, Building2, Pencil, Trash2, CheckCircle2, Clock, AlertCircle, Upload, FileText, Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,8 +45,22 @@ const mockDDABoletos: DDABoleto[] = [
 ];
 
 export default function Contas() {
-  const [contas, setContas] = useState<ContaBancaria[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  const { 
+    contas, 
+    isLoading, 
+    createAccount, 
+    updateAccount, 
+    deleteAccount, 
+    syncAccount, 
+    updateSaldo,
+    isCreating,
+    isUpdating,
+    isDeleting,
+    isSyncing,
+    isUpdatingSaldo
+  } = useAccounts();
+  
   const [syncing, setSyncing] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showDDADialog, setShowDDADialog] = useState(false);
@@ -63,112 +77,35 @@ export default function Contas() {
     provider: ''
   });
 
-  useEffect(() => {
-    loadContas();
-
-    // Setup realtime subscription
-    const channel = supabase
-      .channel('contas_bancarias_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'contas_bancarias'
-        },
-        () => {
-          loadContas();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const loadContas = async () => {
-    try {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('contas_bancarias')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setContas(data || []);
-    } catch (error) {
-      console.error('Erro ao carregar contas:', error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível carregar as contas bancárias.",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleAddAccount = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    const dadosConta = {
+      nome_banco: newAccount.nome_banco,
+      tipo_conta: newAccount.tipo_conta,
+      numero_conta: newAccount.numero_conta,
+      saldo_inicial: parseFloat(newAccount.saldo_inicial) || 0,
+      saldo_atual: parseFloat(newAccount.saldo_inicial) || 0,
+      data_abertura: new Date().toISOString(),
+    };
 
-      const { error } = await supabase
-        .from('contas_bancarias')
-        .insert({
-          user_id: user.id,
-          nome_banco: newAccount.nome_banco,
-          tipo_conta: newAccount.tipo_conta,
-          numero_conta: newAccount.numero_conta,
-          saldo_inicial: parseFloat(newAccount.saldo_inicial) || 0,
-          saldo_atual: parseFloat(newAccount.saldo_inicial) || 0,
-          data_abertura: new Date().toISOString(),
-          ativo: true
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "Sucesso",
-        description: "Conta adicionada com sucesso!",
-      });
-
-      setShowAddDialog(false);
-      setAddStep(1);
-      setNewAccount({
-        nome_banco: '',
-        tipo_conta: '',
-        numero_conta: '',
-        saldo_inicial: '',
-        integrationType: 'manual',
-        provider: ''
-      });
-      loadContas();
-    } catch (error) {
-      console.error('Erro ao adicionar conta:', error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível adicionar a conta.",
-        variant: "destructive"
-      });
-    }
+    createAccount(dadosConta);
+    
+    setShowAddDialog(false);
+    setAddStep(1);
+    setNewAccount({
+      nome_banco: '',
+      tipo_conta: '',
+      numero_conta: '',
+      saldo_inicial: '',
+      integrationType: 'manual',
+      provider: ''
+    });
   };
 
   const handleSyncAccount = async (id: string) => {
     setSyncing(id);
-    setTimeout(() => {
-      toast({
-        title: "Sincronização concluída",
-        description: "23 transações importadas",
-      });
-      setSyncing(null);
-      loadContas();
-    }, 1500);
+    syncAccount(id);
+    setTimeout(() => setSyncing(null), 2000);
   };
 
   const handleSyncAll = () => {
@@ -185,31 +122,9 @@ export default function Contas() {
 
   const handleDeleteAccount = async () => {
     if (!contaToDelete) return;
-
-    try {
-      const { error } = await supabase
-        .from('contas_bancarias')
-        .delete()
-        .eq('id', contaToDelete);
-
-      if (error) throw error;
-
-      toast({
-        title: "Sucesso",
-        description: "Conta excluída com sucesso",
-      });
-
-      setDeleteDialogOpen(false);
-      setContaToDelete(null);
-      loadContas();
-    } catch (error) {
-      console.error('Erro ao excluir conta:', error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível excluir a conta",
-        variant: "destructive"
-      });
-    }
+    deleteAccount(contaToDelete);
+    setDeleteDialogOpen(false);
+    setContaToDelete(null);
   };
 
   const getStatusBadge = (conta: ContaBancaria) => {
@@ -261,7 +176,7 @@ export default function Contas() {
     }).format(new Date(date));
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="p-8 space-y-6">
         <div className="flex justify-between items-center">

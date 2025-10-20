@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useTransactions } from "@/hooks/useTransactions";
+import { useCategories } from "@/hooks/useCategories";
+import { useCostCenters } from "@/hooks/useCostCenters";
+import { useAccounts } from "@/hooks/useAccounts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,13 +61,30 @@ interface TransacaoAVencer {
 }
 
 export default function Transacoes() {
-  const [loading, setLoading] = useState(true);
-  const [transacoes, setTransacoes] = useState<TransacaoComDados[]>([]);
-  const [transacoesAVencer, setTransacoesAVencer] = useState<TransacaoAVencer[]>([]);
-  const [ddaBoletos, setDDABoletos] = useState<DDABoletoComConta[]>([]);
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([]);
-  const [contas, setContas] = useState<ContaBancaria[]>([]);
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  
+  // Usar hooks customizados
+  const { 
+    transacoes, 
+    transacoesAVencer, 
+    ddaBoletos, 
+    isLoading, 
+    createTransaction, 
+    updateTransaction, 
+    deleteTransaction, 
+    conciliarTransactions,
+    isCreating,
+    isUpdating,
+    isDeleting,
+    isConciliando
+  } = useTransactions();
+  
+  const { categorias } = useCategories();
+  const { centrosCusto } = useCostCenters();
+  const { contas } = useAccounts();
+
+  // Estados locais
   const [dialogOpen, setDialogOpen] = useState(false);
   const [baixaDialogOpen, setBaixaDialogOpen] = useState(false);
   const [controleSaldoOpen, setControleSaldoOpen] = useState(false);
@@ -84,8 +104,6 @@ export default function Transacoes() {
   const [transacoesConciliacao, setTransacoesConciliacao] = useState<TransacaoComDados[]>([]);
   const [selecionadosConciliacao, setSelecionadosConciliacao] = useState<string[]>([]);
   const [todosMarConciliacao, setTodosMarConciliacao] = useState(false);
-  const { toast } = useToast();
-  const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
     data_transacao: new Date().toISOString().split("T")[0],
@@ -99,147 +117,6 @@ export default function Transacoes() {
     observacoes: "",
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
-
-      const hoje = new Date().toISOString().split("T")[0];
-
-      // Buscar transações pagas (histórico)
-      const { data: transacoesPagas, error: transacoesPagasError } = await supabase
-        .from("transacoes")
-        .select(`
-          *,
-          categoria:categoria_id(nome, icone, cor),
-          centro_custo:centro_custo_id(nome, codigo),
-          conta:conta_id(nome_banco)
-        `)
-        .eq("user_id", user.id)
-        .eq("status", "pago")
-        .order("data_transacao", { ascending: false })
-        .limit(100);
-
-      if (transacoesPagasError) throw transacoesPagasError;
-
-      // Buscar transações futuras (a vencer)
-      const { data: transacoesFuturas, error: transacoesFuturasError } = await supabase
-        .from("transacoes")
-        .select(`
-          *,
-          categoria:categoria_id(nome, icone, cor),
-          centro_custo:centro_custo_id(nome, codigo),
-          conta:conta_id(nome_banco)
-        `)
-        .eq("user_id", user.id)
-        .in("status", ["pendente", "agendado"])
-        .gte("data_transacao", hoje)
-        .order("data_transacao", { ascending: true });
-
-      if (transacoesFuturasError) throw transacoesFuturasError;
-
-      // Buscar DDA boletos pendentes
-      const { data: ddaData, error: ddaError } = await supabase
-        .from("dda_boletos")
-        .select(`
-          *,
-          contas_bancarias!dda_boletos_conta_bancaria_id_fkey(nome_banco)
-        `)
-        .eq("user_id", user.id)
-        .in("status", ["pendente", "vencido"])
-        .order("data_vencimento", { ascending: true });
-
-      if (ddaError) throw ddaError;
-
-      // Buscar categorias
-      const { data: categoriasData, error: categoriasError } = await supabase
-        .from("categorias")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("ativo", true)
-        .order("nome");
-
-      if (categoriasError) throw categoriasError;
-
-      // Buscar centros de custo
-      const { data: centrosData, error: centrosError } = await supabase
-        .from("centros_custo")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("ativo", true)
-        .order("nome");
-
-      if (centrosError) throw centrosError;
-
-      // Buscar contas bancárias
-      const { data: contasData, error: contasError } = await supabase
-        .from("contas_bancarias")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("ativo", true)
-        .order("nome_banco");
-
-      if (contasError) throw contasError;
-
-      // Montar lista de transações a vencer
-      const aVencer: TransacaoAVencer[] = [];
-
-      // Adicionar transações futuras
-      (transacoesFuturas || []).forEach((t) => {
-        aVencer.push({
-          id: t.id,
-          tipo: 'transacao',
-          data_vencimento: t.data_transacao,
-          descricao: t.descricao,
-          valor: Number(t.valor),
-          categoria: t.categoria?.nome,
-          conta: t.conta?.nome_banco,
-          conta_id: t.conta_id || undefined,
-          status: t.status || 'pendente',
-          original: t,
-        });
-      });
-
-      // Adicionar DDA boletos
-      (ddaData || []).forEach((b) => {
-        const conta = b.contas_bancarias as any;
-        aVencer.push({
-          id: b.id,
-          tipo: 'dda',
-          data_vencimento: b.data_vencimento,
-          descricao: b.beneficiario,
-          valor: Number(b.valor),
-          conta: conta?.nome_banco,
-          conta_id: b.conta_bancaria_id,
-          status: b.status,
-          original: b,
-        });
-      });
-
-      // Ordenar por data de vencimento
-      aVencer.sort((a, b) => new Date(a.data_vencimento).getTime() - new Date(b.data_vencimento).getTime());
-
-      setTransacoes(transacoesPagas || []);
-      setTransacoesAVencer(aVencer);
-      setDDABoletos(ddaData || []);
-      setCategorias(categoriasData || []);
-      setCentrosCusto(centrosData || []);
-      setContas(contasData || []);
-    } catch (error: any) {
-      toast({
-        title: "Erro ao carregar dados",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const resetForm = () => {
     setFormData({
@@ -318,39 +195,12 @@ export default function Transacoes() {
   const handleConciliarSelecionados = async () => {
     if (selecionadosConciliacao.length === 0) return;
     
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
-      
-      const agora = new Date().toISOString();
-      
-      const { error } = await supabase
-        .from("transacoes")
-        .update({
-          status: "pago",
-          conciliado: true,
-          data_conciliacao: agora,
-          usuario_conciliacao: user.id,
-          updated_at: agora,
-        })
-        .in("id", selecionadosConciliacao);
-      
-      if (error) throw error;
-      
-      toast({
-        title: "Conciliação realizada",
-        description: `${selecionadosConciliacao.length} transação(ões) conciliada(s) com sucesso`,
-      });
-      
-      buscarTransacoesConciliacao();
-      loadData();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao conciliar",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+    conciliarTransactions({ 
+      ids: selecionadosConciliacao, 
+      dataConciliacao: dataFinalConciliacao 
+    });
+    
+    buscarTransacoesConciliacao();
   };
 
   const handleEdit = (transacao: Transacao) => {
@@ -397,104 +247,51 @@ export default function Transacoes() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
-
-      const valor = parseFloat(formData.valor);
-      if (isNaN(valor) || valor <= 0) {
-        throw new Error("Valor inválido");
-      }
-
-      if (formData.status === 'pago') {
-        toast({
-          title: "Atenção",
-          description: "Transações devem ser conciliadas antes de marcar como 'pago'. Use status 'agendado' ou realize a conciliação.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      if (editando) {
-        const { error } = await supabase
-          .from("transacoes")
-          .update({
-            data_transacao: formData.data_transacao,
-            descricao: formData.descricao,
-            valor: valor,
-            tipo: formData.tipo,
-            categoria_id: formData.categoria_id || null,
-            centro_custo_id: formData.centro_custo_id || null,
-            conta_id: formData.conta_id || null,
-            status: formData.status,
-            observacoes: formData.observacoes || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", editando.id);
-
-        if (error) throw error;
-
-        toast({
-          title: "Transação atualizada",
-          description: "As alterações foram salvas com sucesso",
-        });
-      } else {
-        const { error } = await supabase.from("transacoes").insert({
-          user_id: user.id,
-          data_transacao: formData.data_transacao,
-          descricao: formData.descricao,
-          valor: valor,
-          tipo: formData.tipo,
-          categoria_id: formData.categoria_id || null,
-          centro_custo_id: formData.centro_custo_id || null,
-          conta_id: formData.conta_id || null,
-          status: formData.status,
-          conciliado: false,
-          observacoes: formData.observacoes || null,
-          origem: "manual",
-        });
-
-        if (error) throw error;
-
-        toast({
-          title: "Transação criada",
-          description: "Nova transação adicionada com sucesso",
-        });
-      }
-
-      setDialogOpen(false);
-      resetForm();
-      loadData();
-    } catch (error: any) {
+    const valor = parseFloat(formData.valor);
+    if (isNaN(valor) || valor <= 0) {
       toast({
-        title: "Erro ao salvar transação",
-        description: error.message,
+        title: "Erro",
+        description: "Valor inválido",
         variant: "destructive",
       });
+      return;
     }
+
+    if (formData.status === 'pago') {
+      toast({
+        title: "Atenção",
+        description: "Transações devem ser conciliadas antes de marcar como 'pago'. Use status 'agendado' ou realize a conciliação.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const dadosTransacao = {
+      data_transacao: formData.data_transacao,
+      descricao: formData.descricao,
+      valor: valor,
+      tipo: formData.tipo,
+      categoria_id: formData.categoria_id || null,
+      centro_custo_id: formData.centro_custo_id || null,
+      conta_id: formData.conta_id || null,
+      status: formData.status,
+      observacoes: formData.observacoes || null,
+      origem: "manual" as const,
+    };
+
+    if (editando) {
+      updateTransaction({ id: editando.id, dados: dadosTransacao });
+    } else {
+      createTransaction(dadosTransacao);
+    }
+
+    setDialogOpen(false);
+    resetForm();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir esta transação?")) return;
-
-    try {
-      const { error } = await supabase.from("transacoes").delete().eq("id", id);
-
-      if (error) throw error;
-
-      toast({
-        title: "Transação excluída",
-        description: "A transação foi removida com sucesso",
-      });
-
-      loadData();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao excluir transação",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+    deleteTransaction(id);
   };
 
   const totalReceitas = transacoes
@@ -505,7 +302,7 @@ export default function Transacoes() {
     .filter((t) => t.tipo === "despesa")
     .reduce((sum, t) => sum + Number(t.valor), 0);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1177,89 +974,16 @@ export default function Transacoes() {
                 return;
               }
 
-              try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (!user) throw new Error("Usuário não autenticado");
+              // Usar a função de conciliação do hook
+              conciliarTransactions({ 
+                ids: selecionados, 
+                dataConciliacao: dataBaixa 
+              });
 
-                for (const id of selecionados) {
-                  const item = transacoesAVencer.find(t => t.id === id);
-                  if (!item) continue;
-
-                  if (item.tipo === 'dda') {
-                    // Verificar duplicação para DDA
-                    const { data: existente } = await supabase
-                      .from("transacoes")
-                      .select("id")
-                      .eq("conta_id", contaBaixa)
-                      .eq("data_transacao", dataBaixa)
-                      .eq("valor", item.valor)
-                      .eq("descricao", item.descricao)
-                      .maybeSingle();
-
-                    if (existente) {
-                      toast({
-                        title: "Duplicação detectada",
-                        description: `Já existe uma transação para ${item.descricao}`,
-                        variant: "destructive",
-                      });
-                      continue;
-                    }
-
-                    // Criar transação a partir do DDA
-                    const { error: transacaoError } = await supabase
-                      .from("transacoes")
-                      .insert({
-                        user_id: user.id,
-                        data_transacao: dataBaixa,
-                        descricao: item.descricao,
-                        valor: item.valor,
-                        tipo: "despesa",
-                        status: "pago",
-                        conta_id: contaBaixa,
-                        origem: "dda",
-                      });
-
-                    if (transacaoError) throw transacaoError;
-
-                    // Atualizar status do DDA
-                    const { error: ddaError } = await supabase
-                      .from("dda_boletos")
-                      .update({ status: "pago" })
-                      .eq("id", id);
-
-                    if (ddaError) throw ddaError;
-                  } else {
-                    // Atualizar transação manual
-                    const { error } = await supabase
-                      .from("transacoes")
-                      .update({
-                        data_transacao: dataBaixa,
-                        conta_id: contaBaixa,
-                        status: "pago",
-                      })
-                      .eq("id", id);
-
-                    if (error) throw error;
-                  }
-                }
-
-                toast({
-                  title: "Sucesso",
-                  description: `${selecionados.length} transação(ões) baixada(s)`,
-                });
-
-                setBaixaDialogOpen(false);
-                setSelecionados([]);
-                setDataBaixa("");
-                setContaBaixa("");
-                loadData();
-              } catch (error: any) {
-                toast({
-                  title: "Erro ao baixar transações",
-                  description: error.message,
-                  variant: "destructive",
-                });
-              }
+              setBaixaDialogOpen(false);
+              setSelecionados([]);
+              setDataBaixa("");
+              setContaBaixa("");
             }}>
               Confirmar Baixa
             </Button>

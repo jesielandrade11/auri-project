@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useCategories } from "@/hooks/useCategories";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,11 +16,19 @@ import { Tables } from "@/integrations/supabase/types";
 type Categoria = Tables<"categorias">;
 
 export default function Categorias() {
-  const [loading, setLoading] = useState(true);
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const { toast } = useToast();
+  const { 
+    categorias, 
+    receitas, 
+    despesas, 
+    isLoading, 
+    createCategory, 
+    updateCategory, 
+    deleteCategory 
+  } = useCategories();
+  
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editando, setEditando] = useState<Categoria | null>(null);
-  const { toast } = useToast();
 
   const [formData, setFormData] = useState({
     nome: "",
@@ -32,35 +40,6 @@ export default function Categorias() {
     icone: "",
   });
 
-  useEffect(() => {
-    loadCategorias();
-  }, []);
-
-  const loadCategorias = async () => {
-    try {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
-
-      const { data, error } = await supabase
-        .from("categorias")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("tipo")
-        .order("nome");
-
-      if (error) throw error;
-      setCategorias(data || []);
-    } catch (error: any) {
-      toast({
-        title: "Erro ao carregar categorias",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const resetForm = () => {
     setFormData({
@@ -92,93 +71,32 @@ export default function Categorias() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
+    const dadosCategoria = {
+      nome: formData.nome,
+      tipo: formData.tipo,
+      dre_grupo: formData.dre_grupo || null,
+      fixa_variavel: formData.fixa_variavel || null,
+      descricao: formData.descricao || null,
+      cor: formData.cor,
+      icone: formData.icone || null,
+    };
 
-      if (editando) {
-        const { error } = await supabase
-          .from("categorias")
-          .update({
-            nome: formData.nome,
-            tipo: formData.tipo,
-            dre_grupo: formData.dre_grupo || null,
-            fixa_variavel: formData.fixa_variavel || null,
-            descricao: formData.descricao || null,
-            cor: formData.cor,
-            icone: formData.icone || null,
-          })
-          .eq("id", editando.id);
-
-        if (error) throw error;
-
-        toast({
-          title: "Categoria atualizada",
-          description: "As alterações foram salvas com sucesso",
-        });
-      } else {
-        const { error } = await supabase.from("categorias").insert({
-          user_id: user.id,
-          nome: formData.nome,
-          tipo: formData.tipo,
-          dre_grupo: formData.dre_grupo || null,
-          fixa_variavel: formData.fixa_variavel || null,
-          descricao: formData.descricao || null,
-          cor: formData.cor,
-          icone: formData.icone || null,
-          ativo: true,
-        });
-
-        if (error) throw error;
-
-        toast({
-          title: "Categoria criada",
-          description: "Nova categoria adicionada com sucesso",
-        });
-      }
-
-      setDialogOpen(false);
-      resetForm();
-      loadCategorias();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao salvar categoria",
-        description: error.message,
-        variant: "destructive",
-      });
+    if (editando) {
+      updateCategory({ id: editando.id, dados: dadosCategoria });
+    } else {
+      createCategory(dadosCategoria);
     }
+
+    setDialogOpen(false);
+    resetForm();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir esta categoria?")) return;
-
-    try {
-      const { error } = await supabase
-        .from("categorias")
-        .update({ ativo: false })
-        .eq("id", id);
-
-      if (error) throw error;
-
-      toast({
-        title: "Categoria excluída",
-        description: "A categoria foi desativada com sucesso",
-      });
-
-      loadCategorias();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao excluir categoria",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+    deleteCategory(id);
   };
 
-  const receitas = categorias.filter((c) => c.tipo === "receita" && c.ativo);
-  const despesas = categorias.filter((c) => c.tipo === "despesa" && c.ativo);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

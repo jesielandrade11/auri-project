@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useBudget } from "@/hooks/useBudget";
+import { useCategories } from "@/hooks/useCategories";
+import { useCostCenters } from "@/hooks/useCostCenters";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -56,11 +57,24 @@ interface Transacao {
 }
 
 export default function Planejamento() {
+  const { toast } = useToast();
+  const [anoFiltro, setAnoFiltro] = useState(new Date().getFullYear());
+  const { 
+    budgets, 
+    isLoading, 
+    createBudget, 
+    deleteBudget, 
+    getBudgetsByMonth, 
+    getTotalsByMonth 
+  } = useBudget(anoFiltro);
+  
+  const { categorias } = useCategories();
+  const { centrosCusto } = useCostCenters();
+  
   const [open, setOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [selectedMonthDetails, setSelectedMonthDetails] = useState<{ month: number; type: 'receitas' | 'despesas' | 'saldo'; budgets: Budget[]; transacoes: Transacao[] }>({ month: 0, type: 'receitas', budgets: [], transacoes: [] });
-  const [anoFiltro, setAnoFiltro] = useState(new Date().getFullYear());
   const [formData, setFormData] = useState({
     mes_referencia: "",
     categoria_id: "",
@@ -68,118 +82,7 @@ export default function Planejamento() {
     valor_planejado: "",
     observacoes: "",
   });
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  const { data: categorias } = useQuery({
-    queryKey: ["categorias"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("categorias")
-        .select("*")
-        .eq("ativo", true)
-        .order("nome");
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const { data: centros } = useQuery({
-    queryKey: ["centros-custo"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("centros_custo")
-        .select("*")
-        .eq("ativo", true)
-        .order("nome");
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const { data: budgets, isLoading } = useQuery({
-    queryKey: ["budgets", anoFiltro],
-    queryFn: async () => {
-      const startDate = `${anoFiltro}-01-01`;
-      const endDate = `${anoFiltro}-12-31`;
-      
-      const { data, error } = await supabase
-        .from("budgets")
-        .select(`
-          *,
-          categoria:categorias(id, nome, tipo),
-          centro_custo:centros_custo(id, nome)
-        `)
-        .gte("mes_referencia", startDate)
-        .lte("mes_referencia", endDate)
-        .order("mes_referencia", { ascending: true });
-      
-      if (error) throw error;
-      return data as Budget[];
-    },
-  });
-
-  const { data: transacoes } = useQuery({
-    queryKey: ["transacoes-ano", anoFiltro],
-    queryFn: async () => {
-      const startDate = `${anoFiltro}-01-01`;
-      const endDate = `${anoFiltro}-12-31`;
-      
-      const { data, error } = await supabase
-        .from("transacoes")
-        .select(`
-          *,
-          categoria:categoria_id(id, nome, tipo),
-          centro_custo:centro_custo_id(id, nome)
-        `)
-        .gte("data_transacao", startDate)
-        .lte("data_transacao", endDate)
-        .order("data_transacao", { ascending: false });
-      
-      if (error) throw error;
-      return data as Transacao[];
-    },
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) throw new Error("Não autenticado");
-
-      const { error } = await supabase.from("budgets").insert({
-        user_id: user.user.id,
-        mes_referencia: data.mes_referencia,
-        categoria_id: data.categoria_id || null,
-        centro_custo_id: data.centro_custo_id || null,
-        valor_planejado: parseFloat(data.valor_planejado),
-        observacoes: data.observacoes || null,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budgets"] });
-      toast({ title: "Planejamento criado com sucesso!" });
-      setOpen(false);
-      resetForm();
-    },
-    onError: (error) => {
-      toast({ title: "Erro ao criar planejamento", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("budgets").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budgets"] });
-      toast({ title: "Planejamento excluído com sucesso!" });
-    },
-    onError: (error) => {
-      toast({ title: "Erro ao excluir planejamento", description: error.message, variant: "destructive" });
-    },
-  });
 
   const resetForm = () => {
     setFormData({
@@ -193,18 +96,18 @@ export default function Planejamento() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createMutation.mutate(formData);
-  };
-
-  const getBudgetsByMonth = () => {
-    const budgetsByMonth: { [key: number]: Budget[] } = {};
-    for (let i = 1; i <= 12; i++) {
-      budgetsByMonth[i] = budgets?.filter((b) => {
-        const mes = new Date(b.mes_referencia).getMonth() + 1;
-        return mes === i;
-      }) || [];
-    }
-    return budgetsByMonth;
+    
+    const dadosBudget = {
+      mes_referencia: formData.mes_referencia,
+      categoria_id: formData.categoria_id || null,
+      centro_custo_id: formData.centro_custo_id || null,
+      valor_planejado: parseFloat(formData.valor_planejado),
+      observacoes: formData.observacoes || null,
+    };
+    
+    createBudget(dadosBudget);
+    setOpen(false);
+    resetForm();
   };
 
   const budgetsByMonth = getBudgetsByMonth();
@@ -302,7 +205,7 @@ export default function Planejamento() {
                           size="icon"
                           onClick={() => {
                             if (confirm("Tem certeza que deseja excluir este planejamento?")) {
-                              deleteMutation.mutate(budget.id);
+                              deleteBudget(budget.id);
                             }
                           }}
                         >
@@ -399,7 +302,7 @@ export default function Planejamento() {
                   <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                     Cancelar
                   </Button>
-                  <Button type="submit" disabled={createMutation.isPending}>
+                  <Button type="submit">
                     Criar
                   </Button>
                 </div>
