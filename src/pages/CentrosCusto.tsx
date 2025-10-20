@@ -38,9 +38,13 @@ export default function CentrosCusto() {
   const { data: centros, isLoading } = useQuery({
     queryKey: ["centros-custo"],
     queryFn: async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Não autenticado");
+
       const { data, error } = await supabase
         .from("centros_custo")
         .select("*")
+        .eq("user_id", auth.user.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as CentroCusto[];
@@ -75,6 +79,9 @@ export default function CentrosCusto() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Não autenticado");
+
       const { error } = await supabase
         .from("centros_custo")
         .update({
@@ -84,7 +91,8 @@ export default function CentrosCusto() {
           orcamento_mensal: data.orcamento_mensal ? parseFloat(data.orcamento_mensal) : null,
           ativo: data.ativo,
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", auth.user.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -100,7 +108,14 @@ export default function CentrosCusto() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("centros_custo").delete().eq("id", id);
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Não autenticado");
+
+      const { error } = await supabase
+        .from("centros_custo")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", auth.user.id);
       if (error) throw error;
     },
     onSuccess: () => {

@@ -97,6 +97,9 @@ export default function Contrapartes() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Não autenticado");
+
       const { error } = await supabase
         .from("contrapartes")
         .update({
@@ -109,7 +112,8 @@ export default function Contrapartes() {
           observacoes: data.observacoes || null,
           ativo: data.ativo,
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", user.user.id);
 
       if (error) throw error;
     },
@@ -126,7 +130,14 @@ export default function Contrapartes() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("contrapartes").update({ ativo: false }).eq("id", id);
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Não autenticado");
+
+      const { error } = await supabase
+        .from("contrapartes")
+        .update({ ativo: false })
+        .eq("id", id)
+        .eq("user_id", user.user.id);
       if (error) throw error;
     },
     onSuccess: () => {

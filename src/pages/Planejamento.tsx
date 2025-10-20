@@ -74,9 +74,13 @@ export default function Planejamento() {
   const { data: categorias } = useQuery({
     queryKey: ["categorias"],
     queryFn: async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Não autenticado");
+
       const { data, error } = await supabase
         .from("categorias")
         .select("*")
+        .eq("user_id", auth.user.id)
         .eq("ativo", true)
         .order("nome");
       if (error) throw error;
@@ -87,9 +91,13 @@ export default function Planejamento() {
   const { data: centros } = useQuery({
     queryKey: ["centros-custo"],
     queryFn: async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Não autenticado");
+
       const { data, error } = await supabase
         .from("centros_custo")
         .select("*")
+        .eq("user_id", auth.user.id)
         .eq("ativo", true)
         .order("nome");
       if (error) throw error;
@@ -103,6 +111,9 @@ export default function Planejamento() {
       const startDate = `${anoFiltro}-01-01`;
       const endDate = `${anoFiltro}-12-31`;
       
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Não autenticado");
+
       const { data, error } = await supabase
         .from("budgets")
         .select(`
@@ -110,6 +121,7 @@ export default function Planejamento() {
           categoria:categorias(id, nome, tipo),
           centro_custo:centros_custo(id, nome)
         `)
+        .eq("user_id", auth.user.id)
         .gte("mes_referencia", startDate)
         .lte("mes_referencia", endDate)
         .order("mes_referencia", { ascending: true });
@@ -125,6 +137,9 @@ export default function Planejamento() {
       const startDate = `${anoFiltro}-01-01`;
       const endDate = `${anoFiltro}-12-31`;
       
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Não autenticado");
+
       const { data, error } = await supabase
         .from("transacoes")
         .select(`
@@ -132,6 +147,7 @@ export default function Planejamento() {
           categoria:categoria_id(id, nome, tipo),
           centro_custo:centro_custo_id(id, nome)
         `)
+        .eq("user_id", auth.user.id)
         .gte("data_transacao", startDate)
         .lte("data_transacao", endDate)
         .order("data_transacao", { ascending: false });
@@ -169,7 +185,13 @@ export default function Planejamento() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("budgets").delete().eq("id", id);
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Não autenticado");
+      const { error } = await supabase
+        .from("budgets")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.user.id);
       if (error) throw error;
     },
     onSuccess: () => {

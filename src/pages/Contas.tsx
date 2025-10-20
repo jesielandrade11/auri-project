@@ -13,6 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Tables } from "@/integrations/supabase/types";
 
 interface ContaBancaria {
   id: string;
@@ -26,23 +27,10 @@ interface ContaBancaria {
   ativo: boolean | null;
 }
 
-interface DDABoleto {
-  id: string;
-  bankId: string;
-  beneficiary: string;
-  value: number;
-  dueDate: Date;
-  status: 'pending' | 'paid' | 'overdue' | 'cancelled';
-  barcode?: string;
-}
-
-const mockDDABoletos: DDABoleto[] = [
-  { id: '1', bankId: '1', beneficiary: 'Energia SA', value: 250.00, dueDate: new Date('2025-10-20'), status: 'pending' },
-  { id: '2', bankId: '1', beneficiary: 'Internet Ltda', value: 120.50, dueDate: new Date('2025-10-25'), status: 'pending' },
-  { id: '3', bankId: '2', beneficiary: 'Água Municipal', value: 85.30, dueDate: new Date('2025-10-05'), status: 'paid' },
-  { id: '4', bankId: '2', beneficiary: 'Telefone Corp', value: 95.00, dueDate: new Date('2025-09-30'), status: 'overdue' },
-  { id: '5', bankId: '3', beneficiary: 'Condomínio Res', value: 450.00, dueDate: new Date('2025-10-15'), status: 'paid' },
-];
+type DDABoleto = Tables<"dda_boletos">;
+type DDABoletoComConta = DDABoleto & {
+  contas_bancarias?: { nome_banco: string | null; numero_conta: string | null } | null;
+};
 
 export default function Contas() {
   const [contas, setContas] = useState<ContaBancaria[]>([]);
@@ -52,7 +40,7 @@ export default function Contas() {
   const [showDDADialog, setShowDDADialog] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [contaToDelete, setContaToDelete] = useState<string | null>(null);
-  const [ddaBoletos, setDDABoletos] = useState<DDABoleto[]>(mockDDABoletos);
+  const [ddaBoletos, setDDABoletos] = useState<DDABoletoComConta[]>([]);
   const [addStep, setAddStep] = useState(1);
   const [newAccount, setNewAccount] = useState({
     nome_banco: '',
@@ -65,6 +53,7 @@ export default function Contas() {
 
   useEffect(() => {
     loadContas();
+    loadDDABoletos();
 
     // Setup realtime subscription
     const channel = supabase
@@ -82,8 +71,24 @@ export default function Contas() {
       )
       .subscribe();
 
+    const ddaChannel = supabase
+      .channel('dda_boletos_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'dda_boletos'
+        },
+        () => {
+          loadDDABoletos();
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(ddaChannel);
     };
   }, []);
 
@@ -110,6 +115,25 @@ export default function Contas() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadDDABoletos = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('dda_boletos')
+        .select('*, contas_bancarias:dda_boletos_conta_bancaria_id_fkey(nome_banco, numero_conta)')
+        .eq('user_id', user.id)
+        .order('data_vencimento', { ascending: true });
+
+      if (error) throw error;
+      setDDABoletos((data as unknown as DDABoletoComConta[]) || []);
+    } catch (error) {
+      console.error('Erro ao carregar DDA:', error);
+      toast({ title: 'Erro', description: 'Não foi possível carregar os boletos DDA.', variant: 'destructive' });
     }
   };
 
@@ -187,10 +211,14 @@ export default function Contas() {
     if (!contaToDelete) return;
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { error } = await supabase
         .from('contas_bancarias')
         .delete()
-        .eq('id', contaToDelete);
+        .eq('id', contaToDelete)
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
@@ -228,13 +256,13 @@ export default function Contas() {
 
   const getStatusBadgeBoleto = (status: string) => {
     switch (status) {
-      case 'pending':
+      case 'pendente':
         return <Badge className="bg-amber-400 hover:bg-amber-500">Pendente</Badge>;
-      case 'paid':
+      case 'pago':
         return <Badge className="bg-emerald-500 hover:bg-emerald-600">Pago</Badge>;
-      case 'overdue':
+      case 'vencido':
         return <Badge variant="destructive">Vencido</Badge>;
-      case 'cancelled':
+      case 'cancelado':
         return <Badge variant="outline">Cancelado</Badge>;
       default:
         return null;
@@ -556,6 +584,7 @@ export default function Contas() {
             <TableHeader>
               <TableRow>
                 <TableHead>Beneficiário</TableHead>
+                <TableHead>Conta</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Vencimento</TableHead>
                 <TableHead>Status</TableHead>
@@ -565,16 +594,38 @@ export default function Contas() {
             <TableBody>
               {ddaBoletos.map((boleto) => (
                 <TableRow key={boleto.id}>
-                  <TableCell className="font-medium">{boleto.beneficiary}</TableCell>
-                  <TableCell>{formatCurrency(boleto.value)}</TableCell>
-                  <TableCell>{formatDate(boleto.dueDate)}</TableCell>
+                  <TableCell className="font-medium">{boleto.beneficiario}</TableCell>
+                  <TableCell>
+                    {boleto.contas_bancarias?.nome_banco || '-'}{boleto.contas_bancarias?.numero_conta ? ` - ${boleto.contas_bancarias?.numero_conta}` : ''}
+                  </TableCell>
+                  <TableCell>{formatCurrency(boleto.valor)}</TableCell>
+                  <TableCell>{formatDate(boleto.data_vencimento)}</TableCell>
                   <TableCell>{getStatusBadgeBoleto(boleto.status)}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm">
                         <FileText className="w-4 h-4" />
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const { data: { user } } = await supabase.auth.getUser();
+                            if (!user) return;
+                            const { error } = await supabase
+                              .from('dda_boletos')
+                              .update({ status: 'cancelado' })
+                              .eq('id', boleto.id)
+                              .eq('user_id', user.id);
+                            if (error) throw error;
+                            toast({ title: 'Boleto cancelado' });
+                            loadDDABoletos();
+                          } catch (error) {
+                            toast({ title: 'Erro', description: 'Não foi possível cancelar o boleto', variant: 'destructive' });
+                          }
+                        }}
+                      >
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>

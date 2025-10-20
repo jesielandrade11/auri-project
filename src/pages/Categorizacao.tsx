@@ -136,6 +136,9 @@ export default function Categorizacao() {
       }
 
       // Atualizar transações
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
       const updates = selecionadas.map(t =>
         supabase
           .from("transacoes")
@@ -145,6 +148,7 @@ export default function Categorizacao() {
             updated_at: new Date().toISOString(),
           })
           .eq("id", t.id)
+          .eq("user_id", user.id)
       );
 
       await Promise.all(updates);
