@@ -1,6 +1,4 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,17 +8,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Pencil, Trash2, Tag } from "lucide-react";
-import { Tables } from "@/integrations/supabase/types";
-
-type Categoria = Tables<"categorias">;
+import { Plus, Pencil, Trash2, Tag } from "lucide-react";
+import { LoadingPage } from "@/components/ui/loading-spinner";
+import { EmptyState, TableEmptyState } from "@/components/ui/empty-state";
+import { ErrorBoundary, QueryErrorFallback } from "@/components/ui/error-boundary";
+import { useFormOperation, useConfirmOperation } from "@/hooks/useAsyncOperation";
+import {
+  useCategorias,
+  useCreateCategoria,
+  useUpdateCategoria,
+  useDeleteCategoria,
+  type Categoria,
+} from "@/hooks/useAPI";
+import { TablesInsert } from "@/integrations/supabase/types";
 
 export default function Categorias() {
-  const [loading, setLoading] = useState(true);
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editando, setEditando] = useState<Categoria | null>(null);
-  const { toast } = useToast();
 
   const [formData, setFormData] = useState({
     nome: "",
@@ -32,35 +36,13 @@ export default function Categorias() {
     icone: "",
   });
 
-  useEffect(() => {
-    loadCategorias();
-  }, []);
+  // Queries
+  const { data: categorias = [], isLoading, error, refetch } = useCategorias();
 
-  const loadCategorias = async () => {
-    try {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
-
-      const { data, error } = await supabase
-        .from("categorias")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("tipo")
-        .order("nome");
-
-      if (error) throw error;
-      setCategorias(data || []);
-    } catch (error: any) {
-      toast({
-        title: "Erro ao carregar categorias",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Mutations
+  const createCategoria = useCreateCategoria();
+  const updateCategoria = useUpdateCategoria();
+  const deleteCategoria = useDeleteCategoria();
 
   const resetForm = () => {
     setFormData({
@@ -89,120 +71,70 @@ export default function Categorias() {
     setDialogOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
+  // Form operations
+  const { execute: handleSubmit, loading: submitting } = useFormOperation(
+    async (data: typeof formData) => {
+      const payload: Omit<TablesInsert<"categorias">, "user_id"> = {
+        nome: data.nome,
+        tipo: data.tipo,
+        dre_grupo: data.dre_grupo || null,
+        fixa_variavel: data.fixa_variavel || null,
+        descricao: data.descricao || null,
+        cor: data.cor,
+        icone: data.icone || null,
+      };
 
       if (editando) {
-        const { error } = await supabase
-          .from("categorias")
-          .update({
-            nome: formData.nome,
-            tipo: formData.tipo,
-            dre_grupo: formData.dre_grupo || null,
-            fixa_variavel: formData.fixa_variavel || null,
-            descricao: formData.descricao || null,
-            cor: formData.cor,
-            icone: formData.icone || null,
-          })
-          .eq("id", editando.id);
-
-        if (error) throw error;
-
-        toast({
-          title: "Categoria atualizada",
-          description: "As alterações foram salvas com sucesso",
-        });
+        return updateCategoria.mutateAsync({ id: editando.id, data: payload });
       } else {
-        const { error } = await supabase.from("categorias").insert({
-          user_id: user.id,
-          nome: formData.nome,
-          tipo: formData.tipo,
-          dre_grupo: formData.dre_grupo || null,
-          fixa_variavel: formData.fixa_variavel || null,
-          descricao: formData.descricao || null,
-          cor: formData.cor,
-          icone: formData.icone || null,
-          ativo: true,
-        });
-
-        if (error) throw error;
-
-        toast({
-          title: "Categoria criada",
-          description: "Nova categoria adicionada com sucesso",
-        });
+        return createCategoria.mutateAsync(payload);
       }
-
-      setDialogOpen(false);
-      resetForm();
-      loadCategorias();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao salvar categoria",
-        description: error.message,
-        variant: "destructive",
-      });
+    },
+    {
+      resetForm,
+      closeDialog: () => setDialogOpen(false),
+      successMessage: editando ? "Categoria atualizada com sucesso" : "Categoria criada com sucesso",
     }
-  };
+  );
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta categoria?")) return;
-
-    try {
-      const { error } = await supabase
-        .from("categorias")
-        .update({ ativo: false })
-        .eq("id", id);
-
-      if (error) throw error;
-
-      toast({
-        title: "Categoria excluída",
-        description: "A categoria foi desativada com sucesso",
-      });
-
-      loadCategorias();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao excluir categoria",
-        description: error.message,
-        variant: "destructive",
-      });
+  // Delete operation
+  const { execute: handleDelete } = useConfirmOperation(
+    (id: string) => deleteCategoria.mutateAsync(id),
+    "Tem certeza que deseja excluir esta categoria?",
+    {
+      successMessage: "Categoria excluída com sucesso",
     }
-  };
+  );
 
   const receitas = categorias.filter((c) => c.tipo === "receita" && c.ativo);
   const despesas = categorias.filter((c) => c.tipo === "despesa" && c.ativo);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+  if (isLoading) {
+    return <LoadingPage text="Carregando categorias..." />;
+  }
+
+  if (error) {
+    return <QueryErrorFallback error={error} resetError={() => refetch()} />;
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Categorias</h1>
-          <p className="text-muted-foreground">
-            Gerencie suas categorias de receitas e despesas
-          </p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={resetForm}>
-              <Plus className="h-4 w-4 mr-2" />
-              Nova Categoria
-            </Button>
-          </DialogTrigger>
+    <ErrorBoundary>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold">Categorias</h1>
+            <p className="text-muted-foreground">
+              Gerencie suas categorias de receitas e despesas
+            </p>
+          </div>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={resetForm}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nova Categoria
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>
@@ -212,7 +144,10 @@ export default function Categorias() {
                 Preencha os dados da categoria
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSubmit(formData);
+                }} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="nome">Nome *</Label>
@@ -331,9 +266,9 @@ export default function Categorias() {
                 >
                   Cancelar
                 </Button>
-                <Button type="submit">
-                  {editando ? "Atualizar" : "Criar"}
-                </Button>
+                  <Button type="submit" disabled={submitting}>
+                    {submitting ? "Salvando..." : editando ? "Atualizar" : "Criar"}
+                  </Button>
               </div>
             </form>
           </DialogContent>
@@ -387,8 +322,24 @@ export default function Categorias() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {receitas.map((categoria) => (
-                <TableRow key={categoria.id}>
+              {receitas.length === 0 ? (
+                <TableEmptyState
+                  icon={Tag}
+                  title="Nenhuma categoria de receita"
+                  description="Crie sua primeira categoria de receita para começar"
+                  action={{
+                    label: "Nova Categoria",
+                    onClick: () => {
+                      resetForm();
+                      setFormData(prev => ({ ...prev, tipo: "receita" }));
+                      setDialogOpen(true);
+                    }
+                  }}
+                  colSpan={4}
+                />
+              ) : (
+                receitas.map((categoria) => (
+                  <TableRow key={categoria.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <span>{categoria.icone}</span>
@@ -419,8 +370,9 @@ export default function Categorias() {
                       </Button>
                     </div>
                   </TableCell>
-                </TableRow>
-              ))}
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -446,7 +398,23 @@ export default function Categorias() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {despesas.map((categoria) => (
+              {despesas.length === 0 ? (
+                <TableEmptyState
+                  icon={Tag}
+                  title="Nenhuma categoria de despesa"
+                  description="Crie sua primeira categoria de despesa para começar"
+                  action={{
+                    label: "Nova Categoria",
+                    onClick: () => {
+                      resetForm();
+                      setFormData(prev => ({ ...prev, tipo: "despesa" }));
+                      setDialogOpen(true);
+                    }
+                  }}
+                  colSpan={5}
+                />
+              ) : (
+                despesas.map((categoria) => (
                 <TableRow key={categoria.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -484,11 +452,13 @@ export default function Categorias() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
