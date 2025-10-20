@@ -108,7 +108,8 @@ export default function Categorias() {
             cor: formData.cor,
             icone: formData.icone || null,
           })
-          .eq("id", editando.id);
+          .eq("id", editando.id)
+          .eq("user_id", user.id);
 
         if (error) throw error;
 
@@ -153,10 +154,14 @@ export default function Categorias() {
     if (!confirm("Tem certeza que deseja excluir esta categoria?")) return;
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
       const { error } = await supabase
         .from("categorias")
         .update({ ativo: false })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", user.id);
 
       if (error) throw error;
 

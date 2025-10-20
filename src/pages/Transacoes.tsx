@@ -333,7 +333,8 @@ export default function Transacoes() {
           usuario_conciliacao: user.id,
           updated_at: agora,
         })
-        .in("id", selecionadosConciliacao);
+        .in("id", selecionadosConciliacao)
+        .eq("user_id", user.id);
       
       if (error) throw error;
       
@@ -430,7 +431,8 @@ export default function Transacoes() {
             observacoes: formData.observacoes || null,
             updated_at: new Date().toISOString(),
           })
-          .eq("id", editando.id);
+          .eq("id", editando.id)
+          .eq("user_id", user.id);
 
         if (error) throw error;
 
@@ -478,7 +480,14 @@ export default function Transacoes() {
     if (!confirm("Tem certeza que deseja excluir esta transação?")) return;
 
     try {
-      const { error } = await supabase.from("transacoes").delete().eq("id", id);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
+      const { error } = await supabase
+        .from("transacoes")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
 
       if (error) throw error;
 
@@ -1190,6 +1199,7 @@ export default function Transacoes() {
                     const { data: existente } = await supabase
                       .from("transacoes")
                       .select("id")
+                      .eq("user_id", user.id)
                       .eq("conta_id", contaBaixa)
                       .eq("data_transacao", dataBaixa)
                       .eq("valor", item.valor)
@@ -1225,7 +1235,8 @@ export default function Transacoes() {
                     const { error: ddaError } = await supabase
                       .from("dda_boletos")
                       .update({ status: "pago" })
-                      .eq("id", id);
+                      .eq("id", id)
+                      .eq("user_id", user.id);
 
                     if (ddaError) throw ddaError;
                   } else {
@@ -1237,7 +1248,8 @@ export default function Transacoes() {
                         conta_id: contaBaixa,
                         status: "pago",
                       })
-                      .eq("id", id);
+                      .eq("id", id)
+                      .eq("user_id", user.id);
 
                     if (error) throw error;
                   }
