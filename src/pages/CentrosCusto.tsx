@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useCostCenters } from "@/hooks/useCostCenters";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,6 +22,15 @@ interface CentroCusto {
 }
 
 export default function CentrosCusto() {
+  const { toast } = useToast();
+  const { 
+    centrosCusto, 
+    isLoading, 
+    createCostCenter, 
+    updateCostCenter, 
+    deleteCostCenter 
+  } = useCostCenters();
+  
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -32,85 +40,7 @@ export default function CentrosCusto() {
     orcamento_mensal: "",
     ativo: true,
   });
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  const { data: centros, isLoading } = useQuery({
-    queryKey: ["centros-custo"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("centros_custo")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as CentroCusto[];
-    },
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) throw new Error("Não autenticado");
-
-      const { error } = await supabase.from("centros_custo").insert({
-        user_id: user.user.id,
-        codigo: data.codigo,
-        nome: data.nome,
-        tipo: data.tipo,
-        orcamento_mensal: data.orcamento_mensal ? parseFloat(data.orcamento_mensal) : null,
-        ativo: data.ativo,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["centros-custo"] });
-      toast({ title: "Centro de custo criado com sucesso!" });
-      setOpen(false);
-      resetForm();
-    },
-    onError: (error) => {
-      toast({ title: "Erro ao criar centro de custo", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
-      const { error } = await supabase
-        .from("centros_custo")
-        .update({
-          codigo: data.codigo,
-          nome: data.nome,
-          tipo: data.tipo,
-          orcamento_mensal: data.orcamento_mensal ? parseFloat(data.orcamento_mensal) : null,
-          ativo: data.ativo,
-        })
-        .eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["centros-custo"] });
-      toast({ title: "Centro de custo atualizado com sucesso!" });
-      setOpen(false);
-      resetForm();
-    },
-    onError: (error) => {
-      toast({ title: "Erro ao atualizar centro de custo", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("centros_custo").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["centros-custo"] });
-      toast({ title: "Centro de custo excluído com sucesso!" });
-    },
-    onError: (error) => {
-      toast({ title: "Erro ao excluir centro de custo", description: error.message, variant: "destructive" });
-    },
-  });
 
   const resetForm = () => {
     setFormData({
@@ -137,11 +67,23 @@ export default function CentrosCusto() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const dadosCentro = {
+      codigo: formData.codigo,
+      nome: formData.nome,
+      tipo: formData.tipo,
+      orcamento_mensal: formData.orcamento_mensal ? parseFloat(formData.orcamento_mensal) : null,
+      ativo: formData.ativo,
+    };
+    
     if (editingId) {
-      updateMutation.mutate({ id: editingId, data: formData });
+      updateCostCenter({ id: editingId, dados: dadosCentro });
     } else {
-      createMutation.mutate(formData);
+      createCostCenter(dadosCentro);
     }
+    
+    setOpen(false);
+    resetForm();
   };
 
   return (
@@ -220,7 +162,7 @@ export default function CentrosCusto() {
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                <Button type="submit">
                   {editingId ? "Atualizar" : "Criar"}
                 </Button>
               </div>
@@ -249,7 +191,7 @@ export default function CentrosCusto() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {centros?.map((centro) => (
+                {centrosCusto?.map((centro) => (
                   <TableRow key={centro.id}>
                     <TableCell>{centro.codigo}</TableCell>
                     <TableCell className="font-medium">{centro.nome}</TableCell>
@@ -277,7 +219,7 @@ export default function CentrosCusto() {
                           size="icon"
                           onClick={() => {
                             if (confirm("Tem certeza que deseja excluir este centro de custo?")) {
-                              deleteMutation.mutate(centro.id);
+                              deleteCostCenter(centro.id);
                             }
                           }}
                         >
