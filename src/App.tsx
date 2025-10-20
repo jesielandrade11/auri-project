@@ -1,10 +1,13 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { queryClient } from "@/lib/query-client";
 import NewDashboard from "./pages/NewDashboard";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
@@ -20,43 +23,44 @@ import FluxoCaixaReport from "./pages/reports/FluxoCaixa";
 import DRECentroCusto from "./pages/reports/DRECentroCusto";
 import Aging from "./pages/reports/Aging";
 
-const queryClient = new QueryClient();
-
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/*"
-            element={
-              <AuthGuard>
-                <AppLayout />
-              </AuthGuard>
-            }
-          >
-            <Route index element={<NewDashboard />} />
-            <Route path="contas" element={<Contas />} />
-            <Route path="transacoes" element={<Transacoes />} />
-            <Route path="categorizacao" element={<Categorizacao />} />
-            <Route path="categorias" element={<Categorias />} />
-            <Route path="centros-custo" element={<CentrosCusto />} />
-            <Route path="contrapartes" element={<Contrapartes />} />
-            <Route path="planejamento" element={<Planejamento />} />
-            <Route path="fluxo-caixa" element={<FluxoCaixa />} />
-            <Route path="relatorios/fluxo-caixa" element={<FluxoCaixaReport />} />
-            <Route path="relatorios/dre" element={<DRECentroCusto />} />
-            <Route path="relatorios/aging" element={<Aging />} />
-            <Route path="configuracoes" element={<div className="p-8">Configurações em desenvolvimento</div>} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/*"
+              element={
+                <AuthGuard>
+                  <AppLayout />
+                </AuthGuard>
+              }
+            >
+              <Route index element={<NewDashboard />} />
+              <Route path="contas" element={<Contas />} />
+              <Route path="transacoes" element={<Transacoes />} />
+              <Route path="categorizacao" element={<Categorizacao />} />
+              <Route path="categorias" element={<Categorias />} />
+              <Route path="centros-custo" element={<CentrosCusto />} />
+              <Route path="contrapartes" element={<Contrapartes />} />
+              <Route path="planejamento" element={<Planejamento />} />
+              <Route path="fluxo-caixa" element={<FluxoCaixa />} />
+              <Route path="relatorios/fluxo-caixa" element={<FluxoCaixaReport />} />
+              <Route path="relatorios/dre" element={<DRECentroCusto />} />
+              <Route path="relatorios/aging" element={<Aging />} />
+              <Route path="configuracoes" element={<div className="p-8">Configurações em desenvolvimento</div>} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;
