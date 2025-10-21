@@ -18,19 +18,35 @@ serve(async (req) => {
     console.log('🔍 Checking Pluggy credentials for connect token...');
     console.log('CLIENT_ID exists:', !!PLUGGY_CLIENT_ID);
     console.log('CLIENT_SECRET exists:', !!PLUGGY_CLIENT_SECRET);
+    console.log('CLIENT_ID (first 8 chars):', PLUGGY_CLIENT_ID?.substring(0, 8));
+    console.log('CLIENT_SECRET (first 8 chars):', PLUGGY_CLIENT_SECRET?.substring(0, 8));
+    console.log('CLIENT_ID length:', PLUGGY_CLIENT_ID?.length);
+    console.log('CLIENT_SECRET length:', PLUGGY_CLIENT_SECRET?.length);
 
     if (!PLUGGY_CLIENT_ID || !PLUGGY_CLIENT_SECRET) {
       console.error('❌ Pluggy credentials not found');
       throw new Error('Pluggy credentials not configured');
     }
 
+    // Validate credential format
+    if (PLUGGY_CLIENT_ID.trim() !== PLUGGY_CLIENT_ID) {
+      console.error('❌ CLIENT_ID has leading/trailing whitespace');
+      throw new Error('CLIENT_ID has invalid format (whitespace detected)');
+    }
+    if (PLUGGY_CLIENT_SECRET.trim() !== PLUGGY_CLIENT_SECRET) {
+      console.error('❌ CLIENT_SECRET has leading/trailing whitespace');
+      throw new Error('CLIENT_SECRET has invalid format (whitespace detected)');
+    }
+
     console.log('🔐 Step 1: Authenticating with Pluggy...');
+    console.log('Using endpoint: https://api.pluggy.ai/auth');
 
     // Authenticate with Pluggy
     const authResponse = await fetch('https://api.pluggy.ai/auth', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
       body: JSON.stringify({
         clientId: PLUGGY_CLIENT_ID,
@@ -39,10 +55,14 @@ serve(async (req) => {
     });
 
     console.log('Auth response status:', authResponse.status);
+    console.log('Auth response headers:', Object.fromEntries(authResponse.headers.entries()));
 
     if (!authResponse.ok) {
       const errorText = await authResponse.text();
       console.error('❌ Pluggy auth error:', authResponse.status, errorText);
+      console.error('Request was sent with:');
+      console.error('- CLIENT_ID length:', PLUGGY_CLIENT_ID.length);
+      console.error('- CLIENT_SECRET length:', PLUGGY_CLIENT_SECRET.length);
       throw new Error(`Failed to authenticate with Pluggy: ${errorText}`);
     }
 

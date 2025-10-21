@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, RefreshCw, Building2, Pencil, Trash2, CheckCircle2, Clock, AlertCircle, Upload, FileText, Wallet } from "lucide-react";
+import { Plus, RefreshCw, Building2, Pencil, Trash2, CheckCircle2, Clock, AlertCircle, Upload, FileText, Wallet, Zap, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,10 @@ interface ContaBancaria {
   data_abertura: string | null;
   ultima_sincronizacao: string | null;
   ativo: boolean | null;
+  pluggy_item_id: string | null;
+  pluggy_connector_id: string | null;
+  pluggy_account_id: string | null;
+  auto_sync: boolean | null;
 }
 
 interface DDABoleto {
@@ -60,6 +64,7 @@ export default function Contas() {
   const [addStep, setAddStep] = useState(1);
   const [editingConta, setEditingConta] = useState<ContaBancaria | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [loadingPluggy, setLoadingPluggy] = useState(false);
   const [newAccount, setNewAccount] = useState({
     nome_banco: '',
     banco: '',
@@ -460,45 +465,83 @@ export default function Contas() {
                         <Button 
                           className="w-full" 
                           onClick={async () => {
+                            if (loadingPluggy) return;
+                            
                             try {
+                              setLoadingPluggy(true);
+                              
+                              console.log('🔌 Requesting Pluggy connect token...');
+                              
                               // Get connect token
                               const { data: tokenData, error: tokenError } = await supabase.functions.invoke('pluggy-connect-token');
                               
-                              if (tokenError) throw tokenError;
+                              if (tokenError) {
+                                console.error('Token error:', tokenError);
+                                throw tokenError;
+                              }
                               
-                              // Load Pluggy Connect Widget
-                              const script = document.createElement('script');
-                              script.src = 'https://cdn.pluggy.ai/connect/v2/pluggy-connect.js';
-                              script.async = true;
-                              document.body.appendChild(script);
+                              console.log('✅ Connect token received');
                               
-                              script.onload = () => {
-                                // @ts-ignore
-                                const pluggyConnect = new window.PluggyConnect({
-                                  connectToken: tokenData.accessToken,
-                                  includeSandbox: true,
-                                  onSuccess: async (itemData: any) => {
-                                    console.log('Pluggy connection successful:', itemData);
-                                    
+                              // Load Pluggy Connect Widget v3
+                              const loadPluggyScript = (): Promise<void> => {
+                                return new Promise((resolve, reject) => {
+                                  // Check if already loaded
+                                  if (window.PluggyConnect) {
+                                    console.log('Pluggy script already loaded');
+                                    resolve();
+                                    return;
+                                  }
+                                  
+                                  const script = document.createElement('script');
+                                  script.src = 'https://cdn.pluggy.ai/connect/v3/pluggy-connect.js';
+                                  script.async = true;
+                                  
+                                  script.onload = () => {
+                                    console.log('✅ Pluggy script loaded successfully');
+                                    resolve();
+                                  };
+                                  
+                                  script.onerror = () => {
+                                    console.error('❌ Failed to load Pluggy script');
+                                    reject(new Error('Failed to load Pluggy script'));
+                                  };
+                                  
+                                  document.head.appendChild(script);
+                                });
+                              };
+                              
+                              await loadPluggyScript();
+                              
+                              console.log('🚀 Initializing Pluggy Connect Widget v3...');
+                              
+                              // @ts-ignore - Pluggy v3 API
+                              const pluggyConnect = new window.PluggyConnect({
+                                connectToken: tokenData.accessToken,
+                                includeSandbox: true,
+                                onSuccess: async (itemData: any) => {
+                                  console.log('✅ Pluggy connection successful:', itemData);
+                                  
+                                  try {
                                     // Create account with Pluggy data
                                     const { data: { user } } = await supabase.auth.getUser();
-                                    if (!user) return;
+                                    if (!user) throw new Error('User not authenticated');
+                                    
+                                    // Extract account info from itemData
+                                    const account = itemData.accounts?.[0];
                                     
                                     const { error } = await supabase
                                       .from('contas_bancarias')
                                       .insert({
                                         user_id: user.id,
-                                        nome_banco: newAccount.nome_banco || itemData.connector.name,
-                                        banco: itemData.connector.name,
-                                        tipo_conta: newAccount.tipo_conta || 'corrente',
-                                        agencia: newAccount.agencia,
-                                        conta: newAccount.conta,
-                                        digito: newAccount.digito,
-                                        numero_conta: newAccount.numero_conta,
-                                        saldo_inicial: parseFloat(newAccount.saldo_inicial) || 0,
-                                        saldo_atual: parseFloat(newAccount.saldo_inicial) || 0,
+                                        nome_banco: newAccount.nome_banco || itemData.item.connector.name,
+                                        banco: itemData.item.connector.name,
+                                        tipo_conta: account?.type || 'corrente',
+                                        numero_conta: account?.number || newAccount.numero_conta,
+                                        saldo_inicial: account?.balance || parseFloat(newAccount.saldo_inicial) || 0,
+                                        saldo_atual: account?.balance || parseFloat(newAccount.saldo_inicial) || 0,
                                         pluggy_item_id: itemData.item.id,
-                                        pluggy_connector_id: itemData.connector.id,
+                                        pluggy_connector_id: itemData.item.connector.id,
+                                        pluggy_account_id: account?.id,
                                         auto_sync: true,
                                         ativo: true
                                       });
@@ -526,38 +569,62 @@ export default function Contas() {
                                     });
                                     loadContas();
                                     
-                                    // Trigger initial sync
-                                    await supabase.functions.invoke('pluggy-sync', {
-                                      body: { itemId: itemData.item.id }
-                                    });
-                                  },
-                                  onError: (error: any) => {
-                                    console.error('Pluggy connection error:', error);
+                                    // Trigger initial sync in background
+                                    supabase.functions.invoke('pluggy-sync', {
+                                      body: { contaId: itemData.item.id }
+                                    }).catch(err => console.error('Initial sync error:', err));
+                                    
+                                  } catch (error) {
+                                    console.error('Error saving account:', error);
                                     toast({
-                                      title: "Erro na conexão",
-                                      description: "Não foi possível conectar ao banco via Pluggy.",
+                                      title: "Erro ao salvar conta",
+                                      description: "A conexão foi estabelecida mas houve erro ao salvar.",
                                       variant: "destructive"
                                     });
-                                  },
-                                  onClose: () => {
-                                    console.log('Pluggy widget closed');
+                                  } finally {
+                                    setLoadingPluggy(false);
                                   }
-                                });
-                                
-                                pluggyConnect.init();
-                              };
+                                },
+                                onError: (error: any) => {
+                                  console.error('❌ Pluggy connection error:', error);
+                                  setLoadingPluggy(false);
+                                  toast({
+                                    title: "Erro na conexão",
+                                    description: error?.message || "Não foi possível conectar ao banco via Pluggy.",
+                                    variant: "destructive"
+                                  });
+                                },
+                                onClose: () => {
+                                  console.log('Pluggy widget closed by user');
+                                  setLoadingPluggy(false);
+                                }
+                              });
+                              
+                              pluggyConnect.init();
+                              
                             } catch (error) {
-                              console.error('Error initializing Pluggy:', error);
+                              console.error('❌ Error initializing Pluggy:', error);
+                              setLoadingPluggy(false);
                               toast({
                                 title: "Erro",
-                                description: "Não foi possível inicializar a conexão com Pluggy.",
+                                description: error instanceof Error ? error.message : "Não foi possível inicializar a conexão com Pluggy.",
                                 variant: "destructive"
                               });
                             }
                           }}
+                          disabled={loadingPluggy}
                         >
-                          <Building2 className="w-4 h-4 mr-2" />
-                          Conectar via Pluggy
+                          {loadingPluggy ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Carregando...
+                            </>
+                          ) : (
+                            <>
+                              <Building2 className="w-4 h-4 mr-2" />
+                              Conectar via Pluggy
+                            </>
+                          )}
                         </Button>
                       </div>
                     </TabsContent>
@@ -739,6 +806,12 @@ export default function Contas() {
                         <p className="text-xs text-muted-foreground mt-1">
                           Ag: {conta.agencia} • Conta: {conta.conta}{conta.digito ? `-${conta.digito}` : ''}
                         </p>
+                      )}
+                      {conta.pluggy_item_id && (
+                        <Badge variant="outline" className="mt-2 flex items-center gap-1 w-fit">
+                          <Zap className="h-3 w-3 text-emerald-500" />
+                          <span className="text-xs">Conectado via Pluggy</span>
+                        </Badge>
                       )}
                     </div>
                   </div>
