@@ -186,7 +186,9 @@ serve(async (req) => {
           valor: trn.valor,
           tipo: trn.tipo,
           status: 'concluido',
-          origem: 'importacao'
+          origem: 'importacao',
+          arquivo_origem: tipoArquivo,
+          data_competencia: trn.data
         });
 
       if (!error) importadas++;
