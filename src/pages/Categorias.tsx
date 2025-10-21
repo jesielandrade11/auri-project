@@ -30,6 +30,7 @@ export default function Categorias() {
     descricao: "",
     cor: "#EF4444",
     icone: "",
+    centro_custo_id: "",
   });
 
   useEffect(() => {
@@ -71,6 +72,7 @@ export default function Categorias() {
       descricao: "",
       cor: "#EF4444",
       icone: "",
+      centro_custo_id: "",
     });
     setEditando(null);
   };
@@ -85,6 +87,7 @@ export default function Categorias() {
       descricao: categoria.descricao || "",
       cor: categoria.cor || "#EF4444",
       icone: categoria.icone || "",
+      centro_custo_id: categoria.centro_custo_id || "",
     });
     setDialogOpen(true);
   };
@@ -127,6 +130,7 @@ export default function Categorias() {
           cor: formData.cor,
           icone: formData.icone || null,
           ativo: true,
+          centro_custo_id: formData.centro_custo_id,
         });
 
         if (error) throw error;

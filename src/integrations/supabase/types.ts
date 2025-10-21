@@ -146,6 +146,7 @@ export type Database = {
           ativo: boolean | null
           caminho: string | null
           categoria_pai_id: string | null
+          centro_custo_id: string
           codigo_contabil: string | null
           cor: string | null
           created_at: string | null
@@ -163,6 +164,7 @@ export type Database = {
           ativo?: boolean | null
           caminho?: string | null
           categoria_pai_id?: string | null
+          centro_custo_id: string
           codigo_contabil?: string | null
           cor?: string | null
           created_at?: string | null
@@ -180,6 +182,7 @@ export type Database = {
           ativo?: boolean | null
           caminho?: string | null
           categoria_pai_id?: string | null
+          centro_custo_id?: string
           codigo_contabil?: string | null
           cor?: string | null
           created_at?: string | null
@@ -199,6 +202,13 @@ export type Database = {
             columns: ["categoria_pai_id"]
             isOneToOne: false
             referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "categorias_centro_custo_id_fkey"
+            columns: ["centro_custo_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
             referencedColumns: ["id"]
           },
         ]
