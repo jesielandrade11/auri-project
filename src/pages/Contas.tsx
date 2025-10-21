@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, RefreshCw, Building2, Pencil, Trash2, CheckCircle2, Clock, AlertCircle, Upload, FileText, Wallet } from "lucide-react";
+import { Plus, RefreshCw, Building2, Pencil, Trash2, CheckCircle2, Clock, AlertCircle, Upload, FileText, Wallet, Link2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,8 @@ import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { FileUploader } from "@/components/banking/FileUploader";
+import { APIConnector } from "@/components/banking/APIConnector";
 
 interface ContaBancaria {
   id: string;
@@ -54,6 +56,9 @@ export default function Contas() {
   const [contaToDelete, setContaToDelete] = useState<string | null>(null);
   const [ddaBoletos, setDDABoletos] = useState<DDABoleto[]>(mockDDABoletos);
   const [addStep, setAddStep] = useState(1);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showAPIDialog, setShowAPIDialog] = useState(false);
+  const [selectedContaForImport, setSelectedContaForImport] = useState<ContaBancaria | null>(null);
   const [newAccount, setNewAccount] = useState({
     nome_banco: '',
     tipo_conta: '',
@@ -473,30 +478,56 @@ export default function Contas() {
                     Última sincronização: {formatDateTime(conta.ultima_sincronizacao)}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleSyncAccount(conta.id)}
-                    disabled={syncing === conta.id}
-                  >
-                    <RefreshCw className={`w-4 h-4 mr-1 ${syncing === conta.id ? 'animate-spin' : ''}`} />
-                    Sincronizar
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <Pencil className="w-4 h-4" />
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      setContaToDelete(conta.id);
-                      setDeleteDialogOpen(true);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedContaForImport(conta);
+                        setShowImportDialog(true);
+                      }}
+                    >
+                      <Upload className="w-4 h-4 mr-1" />
+                      Importar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedContaForImport(conta);
+                        setShowAPIDialog(true);
+                      }}
+                    >
+                      <Link2 className="w-4 h-4 mr-1" />
+                      API
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleSyncAccount(conta.id)}
+                      disabled={syncing === conta.id}
+                    >
+                      <RefreshCw className={`w-4 h-4 mr-1 ${syncing === conta.id ? 'animate-spin' : ''}`} />
+                      Sincronizar
+                    </Button>
+                    <Button variant="outline" size="sm">
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setContaToDelete(conta.id);
+                        setDeleteDialogOpen(true);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -603,6 +634,49 @@ export default function Contas() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Importar Extrato - {selectedContaForImport?.nome_banco}</DialogTitle>
+            <DialogDescription>
+              Faça upload de arquivos OFX, CSV ou PDF do seu banco
+            </DialogDescription>
+          </DialogHeader>
+          {selectedContaForImport && (
+            <FileUploader 
+              contaId={selectedContaForImport.id}
+              onSuccess={() => {
+                setShowImportDialog(false);
+                loadContas();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* API Integration Dialog */}
+      <Dialog open={showAPIDialog} onOpenChange={setShowAPIDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Integração API - {selectedContaForImport?.nome_banco}</DialogTitle>
+            <DialogDescription>
+              Conecte sua conta bancária para sincronização automática
+            </DialogDescription>
+          </DialogHeader>
+          {selectedContaForImport && (
+            <APIConnector 
+              contaId={selectedContaForImport.id}
+              nomeConta={selectedContaForImport.nome_banco}
+              onSuccess={() => {
+                setShowAPIDialog(false);
+                loadContas();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
