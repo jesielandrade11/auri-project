@@ -265,9 +265,13 @@ export type Database = {
       }
       contas_bancarias: {
         Row: {
+          agencia: string | null
           ativo: boolean | null
+          banco: string | null
+          conta: string | null
           created_at: string | null
           data_abertura: string | null
+          digito: string | null
           id: string
           nome_banco: string
           numero_conta: string | null
@@ -279,9 +283,13 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agencia?: string | null
           ativo?: boolean | null
+          banco?: string | null
+          conta?: string | null
           created_at?: string | null
           data_abertura?: string | null
+          digito?: string | null
           id?: string
           nome_banco: string
           numero_conta?: string | null
@@ -293,9 +301,13 @@ export type Database = {
           user_id: string
         }
         Update: {
+          agencia?: string | null
           ativo?: boolean | null
+          banco?: string | null
+          conta?: string | null
           created_at?: string | null
           data_abertura?: string | null
+          digito?: string | null
           id?: string
           nome_banco?: string
           numero_conta?: string | null

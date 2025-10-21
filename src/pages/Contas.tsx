@@ -17,7 +17,11 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 interface ContaBancaria {
   id: string;
   nome_banco: string;
+  banco: string | null;
   tipo_conta: string | null;
+  agencia: string | null;
+  conta: string | null;
+  digito: string | null;
   numero_conta: string | null;
   saldo_atual: number | null;
   saldo_inicial: number | null;
@@ -54,9 +58,15 @@ export default function Contas() {
   const [contaToDelete, setContaToDelete] = useState<string | null>(null);
   const [ddaBoletos, setDDABoletos] = useState<DDABoleto[]>(mockDDABoletos);
   const [addStep, setAddStep] = useState(1);
+  const [editingConta, setEditingConta] = useState<ContaBancaria | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [newAccount, setNewAccount] = useState({
     nome_banco: '',
+    banco: '',
     tipo_conta: '',
+    agencia: '',
+    conta: '',
+    digito: '',
     numero_conta: '',
     saldo_inicial: '',
     integrationType: 'manual' as 'api' | 'manual' | 'file',
@@ -123,7 +133,11 @@ export default function Contas() {
         .insert({
           user_id: user.id,
           nome_banco: newAccount.nome_banco,
+          banco: newAccount.banco,
           tipo_conta: newAccount.tipo_conta,
+          agencia: newAccount.agencia,
+          conta: newAccount.conta,
+          digito: newAccount.digito,
           numero_conta: newAccount.numero_conta,
           saldo_inicial: parseFloat(newAccount.saldo_inicial) || 0,
           saldo_atual: parseFloat(newAccount.saldo_inicial) || 0,
@@ -142,7 +156,11 @@ export default function Contas() {
       setAddStep(1);
       setNewAccount({
         nome_banco: '',
+        banco: '',
         tipo_conta: '',
+        agencia: '',
+        conta: '',
+        digito: '',
         numero_conta: '',
         saldo_inicial: '',
         integrationType: 'manual',
@@ -312,38 +330,70 @@ export default function Contas() {
               {addStep === 1 ? (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="nome_banco">Nome do Banco</Label>
+                    <Label htmlFor="nome_banco">Nome/Apelido da Conta</Label>
                     <Input
                       id="nome_banco"
-                      placeholder="Ex: Banco do Brasil"
+                      placeholder="Ex: Conta Principal BB"
                       value={newAccount.nome_banco}
                       onChange={(e) => setNewAccount({ ...newAccount, nome_banco: e.target.value })}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="tipo_conta">Tipo de Conta</Label>
-                    <Select
-                      value={newAccount.tipo_conta}
-                      onValueChange={(value) => setNewAccount({ ...newAccount, tipo_conta: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o tipo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="corrente">Conta Corrente</SelectItem>
-                        <SelectItem value="poupanca">Conta Poupança</SelectItem>
-                        <SelectItem value="carteira">Carteira Digital</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="banco">Banco</Label>
+                      <Input
+                        id="banco"
+                        placeholder="Ex: Banco do Brasil"
+                        value={newAccount.banco}
+                        onChange={(e) => setNewAccount({ ...newAccount, banco: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tipo_conta">Tipo de Conta</Label>
+                      <Select
+                        value={newAccount.tipo_conta}
+                        onValueChange={(value) => setNewAccount({ ...newAccount, tipo_conta: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="corrente">Conta Corrente</SelectItem>
+                          <SelectItem value="poupanca">Conta Poupança</SelectItem>
+                          <SelectItem value="carteira">Carteira Digital</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="numero_conta">Número da Conta</Label>
-                    <Input
-                      id="numero_conta"
-                      placeholder="Ex: 12345-6"
-                      value={newAccount.numero_conta}
-                      onChange={(e) => setNewAccount({ ...newAccount, numero_conta: e.target.value })}
-                    />
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="agencia">Agência</Label>
+                      <Input
+                        id="agencia"
+                        placeholder="1234"
+                        value={newAccount.agencia}
+                        onChange={(e) => setNewAccount({ ...newAccount, agencia: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="conta">Conta</Label>
+                      <Input
+                        id="conta"
+                        placeholder="123456"
+                        value={newAccount.conta}
+                        onChange={(e) => setNewAccount({ ...newAccount, conta: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="digito">Dígito</Label>
+                      <Input
+                        id="digito"
+                        placeholder="7"
+                        maxLength={2}
+                        value={newAccount.digito}
+                        onChange={(e) => setNewAccount({ ...newAccount, digito: e.target.value })}
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="saldo_inicial">Saldo Inicial (opcional)</Label>
@@ -431,6 +481,120 @@ export default function Contas() {
         </div>
       </div>
 
+      {/* Edit Account Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Editar Conta Bancária</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit_nome_banco">Nome/Apelido da Conta</Label>
+              <Input
+                id="edit_nome_banco"
+                value={newAccount.nome_banco}
+                onChange={(e) => setNewAccount({ ...newAccount, nome_banco: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_banco">Banco</Label>
+                <Input
+                  id="edit_banco"
+                  value={newAccount.banco}
+                  onChange={(e) => setNewAccount({ ...newAccount, banco: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_tipo_conta">Tipo de Conta</Label>
+                <Select
+                  value={newAccount.tipo_conta}
+                  onValueChange={(value) => setNewAccount({ ...newAccount, tipo_conta: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="corrente">Conta Corrente</SelectItem>
+                    <SelectItem value="poupanca">Conta Poupança</SelectItem>
+                    <SelectItem value="carteira">Carteira Digital</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_agencia">Agência</Label>
+                <Input
+                  id="edit_agencia"
+                  value={newAccount.agencia}
+                  onChange={(e) => setNewAccount({ ...newAccount, agencia: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_conta">Conta</Label>
+                <Input
+                  id="edit_conta"
+                  value={newAccount.conta}
+                  onChange={(e) => setNewAccount({ ...newAccount, conta: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_digito">Dígito</Label>
+                <Input
+                  id="edit_digito"
+                  maxLength={2}
+                  value={newAccount.digito}
+                  onChange={(e) => setNewAccount({ ...newAccount, digito: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={async () => {
+                if (!editingConta) return;
+                try {
+                  const { error } = await supabase
+                    .from('contas_bancarias')
+                    .update({
+                      nome_banco: newAccount.nome_banco,
+                      banco: newAccount.banco,
+                      tipo_conta: newAccount.tipo_conta,
+                      agencia: newAccount.agencia,
+                      conta: newAccount.conta,
+                      digito: newAccount.digito,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', editingConta.id);
+
+                  if (error) throw error;
+
+                  toast({
+                    title: "Sucesso",
+                    description: "Conta atualizada com sucesso!",
+                  });
+
+                  setShowEditDialog(false);
+                  setEditingConta(null);
+                  loadContas();
+                } catch (error) {
+                  console.error('Erro ao atualizar conta:', error);
+                  toast({
+                    title: "Erro",
+                    description: "Não foi possível atualizar a conta.",
+                    variant: "destructive"
+                  });
+                }
+              }}>
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Contas Grid */}
       {contas.length === 0 ? (
         <Card className="p-12 text-center">
@@ -457,8 +621,13 @@ export default function Contas() {
                     <div>
                       <CardTitle className="text-lg">{conta.nome_banco}</CardTitle>
                       <CardDescription className="capitalize">
-                        {conta.tipo_conta?.replace('_', ' ')}
+                        {conta.banco || conta.tipo_conta?.replace('_', ' ')}
                       </CardDescription>
+                      {conta.agencia && conta.conta && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Ag: {conta.agencia} • Conta: {conta.conta}{conta.digito ? `-${conta.digito}` : ''}
+                        </p>
+                      )}
                     </div>
                   </div>
                   {getStatusBadge(conta)}
@@ -484,7 +653,26 @@ export default function Contas() {
                     <RefreshCw className={`w-4 h-4 mr-1 ${syncing === conta.id ? 'animate-spin' : ''}`} />
                     Sincronizar
                   </Button>
-                  <Button variant="outline" size="sm">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setEditingConta(conta);
+                      setNewAccount({
+                        nome_banco: conta.nome_banco,
+                        banco: conta.banco || '',
+                        tipo_conta: conta.tipo_conta || '',
+                        agencia: conta.agencia || '',
+                        conta: conta.conta || '',
+                        digito: conta.digito || '',
+                        numero_conta: conta.numero_conta || '',
+                        saldo_inicial: conta.saldo_inicial?.toString() || '0',
+                        integrationType: 'manual',
+                        provider: ''
+                      });
+                      setShowEditDialog(true);
+                    }}
+                  >
                     <Pencil className="w-4 h-4" />
                   </Button>
                   <Button 

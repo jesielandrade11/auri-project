@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Filter, CheckCircle2, XCircle, DollarSign, Calendar, Receipt } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Filter, CheckCircle2, XCircle, DollarSign, Calendar, Receipt, Upload } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tables } from "@/integrations/supabase/types";
@@ -524,6 +524,10 @@ export default function Transacoes() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate("/importacao")}>
+            <Upload className="h-4 w-4 mr-2" />
+            Importar Arquivos
+          </Button>
           <Button variant="outline" onClick={() => navigate("/categorizacao")}>
             <Filter className="h-4 w-4 mr-2" />
             Categorizar
