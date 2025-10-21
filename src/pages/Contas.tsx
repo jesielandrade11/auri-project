@@ -179,14 +179,30 @@ export default function Contas() {
 
   const handleSyncAccount = async (id: string) => {
     setSyncing(id);
-    setTimeout(() => {
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('pluggy-sync', {
+        body: { contaId: id }
+      });
+
+      if (error) throw error;
+
       toast({
         title: "Sincronização concluída",
-        description: "23 transações importadas",
+        description: `${data.imported} transações importadas, ${data.skipped} ignoradas (duplicadas)`,
       });
-      setSyncing(null);
+      
       loadContas();
-    }, 1500);
+    } catch (error) {
+      console.error('Erro ao sincronizar:', error);
+      toast({
+        title: "Erro na sincronização",
+        description: "Não foi possível sincronizar a conta. Verifique se está conectada ao Pluggy.",
+        variant: "destructive"
+      });
+    } finally {
+      setSyncing(null);
+    }
   };
 
   const handleSyncAll = () => {
@@ -428,26 +444,122 @@ export default function Contas() {
                     </TabsList>
                     
                     <TabsContent value="api" className="space-y-4">
-                      <div className="space-y-2">
-                        <Label>Provedor de Integração</Label>
-                        <Select
-                          value={newAccount.provider}
-                          onValueChange={(value) => setNewAccount({ ...newAccount, provider: value })}
+                      <div className="space-y-4">
+                        <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                          <div className="flex items-start gap-3">
+                            <Wallet className="w-5 h-5 text-primary mt-0.5" />
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-sm mb-1">Conexão via Pluggy</h4>
+                              <p className="text-xs text-muted-foreground">
+                                Conecte sua conta bancária de forma segura através da Pluggy.
+                                Suas transações serão importadas automaticamente.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <Button 
+                          className="w-full" 
+                          onClick={async () => {
+                            try {
+                              // Get connect token
+                              const { data: tokenData, error: tokenError } = await supabase.functions.invoke('pluggy-connect-token');
+                              
+                              if (tokenError) throw tokenError;
+                              
+                              // Load Pluggy Connect Widget
+                              const script = document.createElement('script');
+                              script.src = 'https://cdn.pluggy.ai/connect/v2/pluggy-connect.js';
+                              script.async = true;
+                              document.body.appendChild(script);
+                              
+                              script.onload = () => {
+                                // @ts-ignore
+                                const pluggyConnect = new window.PluggyConnect({
+                                  connectToken: tokenData.accessToken,
+                                  includeSandbox: true,
+                                  onSuccess: async (itemData: any) => {
+                                    console.log('Pluggy connection successful:', itemData);
+                                    
+                                    // Create account with Pluggy data
+                                    const { data: { user } } = await supabase.auth.getUser();
+                                    if (!user) return;
+                                    
+                                    const { error } = await supabase
+                                      .from('contas_bancarias')
+                                      .insert({
+                                        user_id: user.id,
+                                        nome_banco: newAccount.nome_banco || itemData.connector.name,
+                                        banco: itemData.connector.name,
+                                        tipo_conta: newAccount.tipo_conta || 'corrente',
+                                        agencia: newAccount.agencia,
+                                        conta: newAccount.conta,
+                                        digito: newAccount.digito,
+                                        numero_conta: newAccount.numero_conta,
+                                        saldo_inicial: parseFloat(newAccount.saldo_inicial) || 0,
+                                        saldo_atual: parseFloat(newAccount.saldo_inicial) || 0,
+                                        pluggy_item_id: itemData.item.id,
+                                        pluggy_connector_id: itemData.connector.id,
+                                        auto_sync: true,
+                                        ativo: true
+                                      });
+                                    
+                                    if (error) throw error;
+                                    
+                                    toast({
+                                      title: "Conexão estabelecida!",
+                                      description: "Sua conta foi conectada via Pluggy. As transações serão importadas em breve.",
+                                    });
+                                    
+                                    setShowAddDialog(false);
+                                    setAddStep(1);
+                                    setNewAccount({
+                                      nome_banco: '',
+                                      banco: '',
+                                      tipo_conta: '',
+                                      agencia: '',
+                                      conta: '',
+                                      digito: '',
+                                      numero_conta: '',
+                                      saldo_inicial: '',
+                                      integrationType: 'manual',
+                                      provider: ''
+                                    });
+                                    loadContas();
+                                    
+                                    // Trigger initial sync
+                                    await supabase.functions.invoke('pluggy-sync', {
+                                      body: { itemId: itemData.item.id }
+                                    });
+                                  },
+                                  onError: (error: any) => {
+                                    console.error('Pluggy connection error:', error);
+                                    toast({
+                                      title: "Erro na conexão",
+                                      description: "Não foi possível conectar ao banco via Pluggy.",
+                                      variant: "destructive"
+                                    });
+                                  },
+                                  onClose: () => {
+                                    console.log('Pluggy widget closed');
+                                  }
+                                });
+                                
+                                pluggyConnect.init();
+                              };
+                            } catch (error) {
+                              console.error('Error initializing Pluggy:', error);
+                              toast({
+                                title: "Erro",
+                                description: "Não foi possível inicializar a conexão com Pluggy.",
+                                variant: "destructive"
+                              });
+                            }
+                          }}
                         >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione o provedor" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pluggy">Pluggy</SelectItem>
-                            <SelectItem value="belvo">Belvo</SelectItem>
-                            <SelectItem value="celcoin">Celcoin</SelectItem>
-                            <SelectItem value="openfinance">Open Finance Brasil</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          <Building2 className="w-4 h-4 mr-2" />
+                          Conectar via Pluggy
+                        </Button>
                       </div>
-                      <Button className="w-full" disabled={!newAccount.provider}>
-                        Conectar ao Banco
-                      </Button>
                     </TabsContent>
                     
                     <TabsContent value="file" className="space-y-4">

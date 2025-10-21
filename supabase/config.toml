@@ -1,1 +1,16 @@
 project_id = "ltbbzzgcqqhhqkhqkmvg"
+
+[functions.processar-importacao]
+verify_jwt = false
+
+[functions.pluggy-auth]
+verify_jwt = false
+
+[functions.pluggy-connect-token]
+verify_jwt = false
+
+[functions.pluggy-webhook]
+verify_jwt = false
+
+[functions.pluggy-sync]
+verify_jwt = false

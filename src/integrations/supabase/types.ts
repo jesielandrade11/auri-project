@@ -267,6 +267,7 @@ export type Database = {
         Row: {
           agencia: string | null
           ativo: boolean | null
+          auto_sync: boolean | null
           banco: string | null
           conta: string | null
           created_at: string | null
@@ -275,16 +276,21 @@ export type Database = {
           id: string
           nome_banco: string
           numero_conta: string | null
+          pluggy_account_id: string | null
+          pluggy_connector_id: string | null
+          pluggy_item_id: string | null
           saldo_atual: number | null
           saldo_inicial: number | null
           tipo_conta: string | null
           ultima_sincronizacao: string | null
+          ultimo_erro_sync: string | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
           agencia?: string | null
           ativo?: boolean | null
+          auto_sync?: boolean | null
           banco?: string | null
           conta?: string | null
           created_at?: string | null
@@ -293,16 +299,21 @@ export type Database = {
           id?: string
           nome_banco: string
           numero_conta?: string | null
+          pluggy_account_id?: string | null
+          pluggy_connector_id?: string | null
+          pluggy_item_id?: string | null
           saldo_atual?: number | null
           saldo_inicial?: number | null
           tipo_conta?: string | null
           ultima_sincronizacao?: string | null
+          ultimo_erro_sync?: string | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
           agencia?: string | null
           ativo?: boolean | null
+          auto_sync?: boolean | null
           banco?: string | null
           conta?: string | null
           created_at?: string | null
@@ -311,10 +322,14 @@ export type Database = {
           id?: string
           nome_banco?: string
           numero_conta?: string | null
+          pluggy_account_id?: string | null
+          pluggy_connector_id?: string | null
+          pluggy_item_id?: string | null
           saldo_atual?: number | null
           saldo_inicial?: number | null
           tipo_conta?: string | null
           ultima_sincronizacao?: string | null
+          ultimo_erro_sync?: string | null
           updated_at?: string | null
           user_id?: string
         }
