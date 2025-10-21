@@ -13,6 +13,20 @@ import { format, parseISO, differenceInDays, eachDayOfInterval, eachWeekOfInterv
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 
+// Adicionando a definição do tipo Transaction
+type Transaction = {
+  id: string;
+  descricao: string;
+  valor: number;
+  data_transacao: string;
+  tipo: 'receita' | 'despesa';
+  categoria: {
+    nome: string;
+    icone: string;
+    cor: string;
+  };
+};
+
 const NewDashboard = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -55,7 +69,7 @@ const NewDashboard = () => {
   });
 
   // Buscar transações com filtros
-  const { data: transacoes = [], isLoading } = useQuery({
+  const { data: transacoes = [] } = useQuery({
     queryKey: ["transacoes-dashboard", filters],
     enabled: !!filters,
     queryFn: async () => {
@@ -74,7 +88,7 @@ const NewDashboard = () => {
         .eq("user_id", user.id)
         .gte("data_transacao", filters.dataInicio)
         .lte("data_transacao", filters.dataFim)
-        .eq("conciliado", true);
+        .in("status", ["pago", "pendente"]);
 
       if (filters.contaIds.length > 0) {
         query = query.in("conta_id", filters.contaIds);
@@ -91,39 +105,22 @@ const NewDashboard = () => {
     },
   });
 
-  // Calcular KPIs
-  const kpiData = {
-    faturamentoBruto: transacoes
-      .filter((t) => t.tipo === "receita")
-      .reduce((sum, t) => sum + Number(t.valor), 0),
-    gastosOperacionais: transacoes
-      .filter((t) => t.tipo === "despesa")
-      .reduce((sum, t) => sum + Number(t.valor), 0),
-    lucroOperacional: 0,
-    lucroLiquido: 0,
-    roi: 0,
-    saldoCaixa: contas.reduce((sum, c) => sum + Number(c.saldo_atual), 0),
-    variacoes: {
-      faturamento: 12.5,
-      gastos: 7.2,
-      lucroOp: 18.3,
-      lucroLiq: 22.1,
+  // Buscar KPIs
+  const { data: kpiData, isLoading } = useQuery({
+    queryKey: ["kpis-dashboard", filters],
+    enabled: !!filters,
+    queryFn: async () => {
+      if (!filters) return null;
+      const { data, error } = await supabase.rpc('get_dashboard_kpis', {
+        data_inicio: filters.dataInicio,
+        data_fim: filters.dataFim,
+        conta_ids: filters.contaIds,
+        categoria_ids: filters.categoriaIds,
+      });
+      if (error) throw error;
+      return data;
     },
-    margens: {
-      operacional: 0,
-      liquida: 0,
-    },
-    diasReserva: 0,
-  };
-
-  kpiData.lucroOperacional = kpiData.faturamentoBruto - kpiData.gastosOperacionais;
-  kpiData.lucroLiquido = kpiData.lucroOperacional * 0.82; // Simulação de impostos
-  kpiData.roi = kpiData.faturamentoBruto > 0 ? (kpiData.lucroLiquido / kpiData.faturamentoBruto) * 100 : 0;
-  kpiData.margens.operacional = kpiData.faturamentoBruto > 0 ? (kpiData.lucroOperacional / kpiData.faturamentoBruto) * 100 : 0;
-  kpiData.margens.liquida = kpiData.faturamentoBruto > 0 ? (kpiData.lucroLiquido / kpiData.faturamentoBruto) * 100 : 0;
-  
-  const mediaGastosDiarios = kpiData.gastosOperacionais / Math.max(1, differenceInDays(parseISO(filters?.dataFim || new Date().toISOString()), parseISO(filters?.dataInicio || new Date().toISOString())));
-  kpiData.diasReserva = mediaGastosDiarios > 0 ? Math.floor(kpiData.saldoCaixa / mediaGastosDiarios) : 999;
+  });
 
   // Preparar dados do gráfico de fluxo de caixa
   const prepararDadosFluxo = () => {
@@ -248,56 +245,57 @@ const NewDashboard = () => {
   };
 
   const dadosFluxo = prepararDadosFluxo();
-  const dadosCategoria = prepararDadosCategoria();
+  const dadosCategoria = kpiData ? prepararDadosCategoria() : [];
 
   // Dados de rentabilidade
-  const dadosRentabilidade = {
+  const dadosRentabilidade = kpiData ? {
     margemBruta: kpiData.margens.operacional + 15, // Simulação
     margemOperacional: kpiData.margens.operacional,
     margemLiquida: kpiData.margens.liquida,
     pontoEquilibrio: kpiData.gastosOperacionais / 0.7, // Simulação
     faturamentoAtual: kpiData.faturamentoBruto,
-  };
+  } : null;
 
   // Gerar alertas inteligentes
   const alerts = [];
-  
-  // Alerta de fluxo de caixa negativo
-  if (kpiData.diasReserva < 30) {
-    alerts.push({
-      id: "1",
-      type: "critical" as const,
-      title: "Fluxo de caixa crítico!",
-      message: `Apenas ${kpiData.diasReserva} dias de reserva. Atenção necessária para evitar problemas de liquidez.`,
-      action: {
-        label: "Ver Projeção",
-        onClick: () => navigate("/fluxo-caixa"),
-      },
-    });
-  }
+  if (kpiData) {
+    // Alerta de fluxo de caixa negativo
+    if (kpiData.diasReserva < 30) {
+      alerts.push({
+        id: "1",
+        type: "critical" as const,
+        title: "Fluxo de caixa crítico!",
+        message: `Apenas ${kpiData.diasReserva} dias de reserva. Atenção necessária para evitar problemas de liquidez.`,
+        action: {
+          label: "Ver Projeção",
+          onClick: () => navigate("/fluxo-caixa"),
+        },
+      });
+    }
 
-  // Alerta de gastos elevados
-  if (kpiData.margens.operacional < 20) {
-    alerts.push({
-      id: "2",
-      type: "warning" as const,
-      title: "Margem operacional baixa",
-      message: `Margem de ${kpiData.margens.operacional.toFixed(1)}% está abaixo do ideal (>30%). Revise seus custos.`,
-      action: {
-        label: "Ver Despesas",
-        onClick: () => navigate("/transacoes"),
-      },
-    });
-  }
+    // Alerta de gastos elevados
+    if (kpiData.margens.operacional < 20) {
+      alerts.push({
+        id: "2",
+        type: "warning" as const,
+        title: "Margem operacional baixa",
+        message: `Margem de ${kpiData.margens.operacional.toFixed(1)}% está abaixo do ideal (>30%). Revise seus custos.`,
+        action: {
+          label: "Ver Despesas",
+          onClick: () => navigate("/transacoes"),
+        },
+      });
+    }
 
-  // Alerta informativo de crescimento
-  if (kpiData.variacoes.faturamento > 10) {
-    alerts.push({
-      id: "3",
-      type: "info" as const,
-      title: "Crescimento positivo!",
-      message: `Faturamento cresceu ${kpiData.variacoes.faturamento.toFixed(1)}% em relação ao período anterior. Continue assim! 🎉`,
-    });
+    // Alerta informativo de crescimento
+    if (kpiData.variacoes.faturamento > 10) {
+      alerts.push({
+        id: "3",
+        type: "info" as const,
+        title: "Crescimento positivo!",
+        message: `Faturamento cresceu ${kpiData.variacoes.faturamento.toFixed(1)}% em relação ao período anterior. Continue assim! 🎉`,
+      });
+    }
   }
 
   if (isLoading) {
@@ -318,7 +316,13 @@ const NewDashboard = () => {
           categorias={categorias}
         />
 
-        {filters && (
+        {filters && isLoading && (
+          <div className="flex items-center justify-center h-96">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          </div>
+        )}
+
+        {filters && !isLoading && kpiData && (
           <>
             {/* Header */}
             <div className="mb-8">
@@ -335,20 +339,20 @@ const NewDashboard = () => {
               {/* Coluna Principal */}
               <div className="space-y-6">
                 {/* KPIs Principais */}
-                <ExecutiveKPIs data={kpiData} />
+                {kpiData && <ExecutiveKPIs data={kpiData} />}
 
                 {/* Gráfico de Fluxo de Caixa */}
                 <CashFlowChart data={dadosFluxo} granularidade={filters.granularidade} />
 
                 {/* Despesas por Categoria */}
-                <ExpensesCategoryChart data={dadosCategoria} totalDespesas={kpiData.gastosOperacionais} />
+                {kpiData && <ExpensesCategoryChart data={dadosCategoria} totalDespesas={kpiData.gastosOperacionais} />}
 
                 {/* Indicadores de Rentabilidade */}
-                <ProfitabilityGauges data={dadosRentabilidade} />
+                {dadosRentabilidade && <ProfitabilityGauges data={dadosRentabilidade} />}
 
                 {/* Transações Recentes */}
                 <RecentTransactions 
-                  transactions={transacoes as any}
+                  transactions={transacoes as Transaction[]}
                   onViewAll={() => navigate("/transacoes")}
                 />
               </div>
