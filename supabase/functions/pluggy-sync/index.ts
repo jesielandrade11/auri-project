@@ -19,13 +19,16 @@ serve(async (req) => {
     const PLUGGY_CLIENT_ID = Deno.env.get('PLUGGY_CLIENT_ID');
     const PLUGGY_CLIENT_SECRET = Deno.env.get('PLUGGY_CLIENT_SECRET');
 
+    console.log('🔄 Pluggy sync function started');
+    console.log('Credentials present:', !!PLUGGY_CLIENT_ID, !!PLUGGY_CLIENT_SECRET);
+
     const { contaId } = await req.json();
 
     if (!contaId) {
       throw new Error('contaId is required');
     }
 
-    console.log('Syncing account:', contaId);
+    console.log('🏦 Syncing account:', contaId);
 
     // Get account details
     const { data: conta, error: contaError } = await supabase
@@ -35,12 +38,19 @@ serve(async (req) => {
       .single();
 
     if (contaError || !conta) {
+      console.error('❌ Account not found:', contaError);
       throw new Error('Account not found');
     }
+
+    console.log('✅ Account found:', conta.nome);
+    console.log('Pluggy item ID:', conta.pluggy_item_id);
+    console.log('Pluggy account ID:', conta.pluggy_account_id);
 
     if (!conta.pluggy_item_id) {
       throw new Error('Account not connected to Pluggy');
     }
+
+    console.log('🔐 Authenticating with Pluggy...');
 
     // Get API key
     const authResponse = await fetch('https://api.pluggy.ai/auth', {
@@ -52,42 +62,67 @@ serve(async (req) => {
       }),
     });
 
+    console.log('Auth response status:', authResponse.status);
+
     if (!authResponse.ok) {
-      throw new Error('Failed to authenticate with Pluggy');
+      const errorText = await authResponse.text();
+      console.error('❌ Authentication failed:', errorText);
+      throw new Error(`Failed to authenticate with Pluggy: ${errorText}`);
     }
 
     const { apiKey } = await authResponse.json();
+    console.log('✅ Authentication successful');
+
+    console.log('📊 Fetching accounts from Pluggy...');
 
     // Fetch accounts for this item
     const accountsResponse = await fetch(`https://api.pluggy.ai/accounts?itemId=${conta.pluggy_item_id}`, {
       headers: { 'X-API-KEY': apiKey },
     });
 
+    console.log('Accounts response status:', accountsResponse.status);
+
     if (!accountsResponse.ok) {
-      throw new Error('Failed to fetch accounts from Pluggy');
+      const errorText = await accountsResponse.text();
+      console.error('❌ Failed to fetch accounts:', errorText);
+      throw new Error(`Failed to fetch accounts from Pluggy: ${errorText}`);
     }
 
     const { results: accounts } = await accountsResponse.json();
+    console.log(`✅ Found ${accounts.length} accounts from Pluggy`);
+    
     const pluggyAccount = accounts.find((acc: any) => acc.id === conta.pluggy_account_id);
 
     if (!pluggyAccount) {
+      console.error('❌ Pluggy account not found. Available accounts:', accounts.map((a: any) => a.id));
       throw new Error('Pluggy account not found');
     }
+
+    console.log('✅ Found matching Pluggy account:', pluggyAccount.id);
+    console.log('Account balance:', pluggyAccount.balance);
+
+    console.log('💳 Fetching transactions...');
 
     // Fetch transactions
     const transactionsResponse = await fetch(`https://api.pluggy.ai/transactions?accountId=${pluggyAccount.id}`, {
       headers: { 'X-API-KEY': apiKey },
     });
 
+    console.log('Transactions response status:', transactionsResponse.status);
+
     if (!transactionsResponse.ok) {
-      throw new Error('Failed to fetch transactions from Pluggy');
+      const errorText = await transactionsResponse.text();
+      console.error('❌ Failed to fetch transactions:', errorText);
+      throw new Error(`Failed to fetch transactions from Pluggy: ${errorText}`);
     }
 
     const { results: transactions } = await transactionsResponse.json();
-    console.log(`Found ${transactions.length} transactions`);
+    console.log(`✅ Found ${transactions.length} transactions from Pluggy`);
 
     let imported = 0;
     let skipped = 0;
+
+    console.log('💾 Processing transactions...');
 
     // Import transactions
     for (const tx of transactions) {
@@ -121,14 +156,16 @@ serve(async (req) => {
       });
 
       if (error) {
-        console.error('Error inserting transaction:', error);
+        console.error('❌ Error inserting transaction:', error);
       } else {
         imported++;
       }
     }
 
+    console.log(`📊 Processing results: ${imported} imported, ${skipped} skipped`);
+
     // Update account balance and last sync
-    await supabase
+    const { error: updateError } = await supabase
       .from('contas_bancarias')
       .update({ 
         saldo_atual: pluggyAccount.balance,
@@ -137,7 +174,13 @@ serve(async (req) => {
       })
       .eq('id', conta.id);
 
-    console.log(`Sync complete: ${imported} imported, ${skipped} skipped`);
+    if (updateError) {
+      console.error('❌ Error updating account:', updateError);
+    } else {
+      console.log('✅ Account updated successfully');
+    }
+
+    console.log(`✅ Sync complete: ${imported} imported, ${skipped} skipped out of ${transactions.length} total`);
 
     return new Response(JSON.stringify({ 
       success: true,

@@ -15,11 +15,16 @@ serve(async (req) => {
     const PLUGGY_CLIENT_ID = Deno.env.get('PLUGGY_CLIENT_ID');
     const PLUGGY_CLIENT_SECRET = Deno.env.get('PLUGGY_CLIENT_SECRET');
 
+    console.log('🔍 Checking Pluggy credentials for connect token...');
+    console.log('CLIENT_ID exists:', !!PLUGGY_CLIENT_ID);
+    console.log('CLIENT_SECRET exists:', !!PLUGGY_CLIENT_SECRET);
+
     if (!PLUGGY_CLIENT_ID || !PLUGGY_CLIENT_SECRET) {
+      console.error('❌ Pluggy credentials not found');
       throw new Error('Pluggy credentials not configured');
     }
 
-    console.log('Getting Pluggy access token...');
+    console.log('🔐 Step 1: Authenticating with Pluggy...');
 
     // Authenticate with Pluggy
     const authResponse = await fetch('https://api.pluggy.ai/auth', {
@@ -33,14 +38,19 @@ serve(async (req) => {
       }),
     });
 
+    console.log('Auth response status:', authResponse.status);
+
     if (!authResponse.ok) {
       const errorText = await authResponse.text();
-      console.error('Pluggy auth error:', authResponse.status, errorText);
+      console.error('❌ Pluggy auth error:', authResponse.status, errorText);
       throw new Error(`Failed to authenticate with Pluggy: ${errorText}`);
     }
 
     const { apiKey } = await authResponse.json();
-    console.log('Pluggy authentication successful');
+    console.log('✅ Pluggy authentication successful');
+    console.log('API Key received:', !!apiKey);
+
+    console.log('🎫 Step 2: Creating connect token...');
 
     // Create connect token
     const connectTokenResponse = await fetch('https://api.pluggy.ai/connect_token', {
@@ -52,20 +62,23 @@ serve(async (req) => {
       body: JSON.stringify({}),
     });
 
+    console.log('Connect token response status:', connectTokenResponse.status);
+
     if (!connectTokenResponse.ok) {
       const errorText = await connectTokenResponse.text();
-      console.error('Connect token error:', connectTokenResponse.status, errorText);
+      console.error('❌ Connect token error:', connectTokenResponse.status, errorText);
       throw new Error(`Failed to create connect token: ${errorText}`);
     }
 
     const connectTokenData = await connectTokenResponse.json();
-    console.log('Connect token created successfully');
+    console.log('✅ Connect token created successfully');
+    console.log('Access token present:', !!connectTokenData.accessToken);
 
     return new Response(JSON.stringify(connectTokenData), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Error in pluggy-connect-token function:', error);
+    console.error('❌ Error in pluggy-connect-token function:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
