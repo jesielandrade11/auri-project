@@ -14,6 +14,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
+// Declare Pluggy global type
+declare global {
+  interface Window {
+    PluggyConnect: any;
+  }
+}
+
 interface ContaBancaria {
   id: string;
   nome_banco: string;

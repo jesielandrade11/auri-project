@@ -1,3 +1,4 @@
+// Edge Function: Pluggy Connect Token - v2.0 (Force redeploy for new secrets)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
 
