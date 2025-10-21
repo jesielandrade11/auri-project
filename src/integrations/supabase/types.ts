@@ -409,6 +409,59 @@ export type Database = {
           },
         ]
       }
+      importacoes: {
+        Row: {
+          conta_bancaria_id: string | null
+          created_at: string
+          dados_originais: Json | null
+          id: string
+          mensagem_erro: string | null
+          nome_arquivo: string
+          status: string
+          tipo_arquivo: string
+          total_transacoes: number | null
+          transacoes_importadas: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          conta_bancaria_id?: string | null
+          created_at?: string
+          dados_originais?: Json | null
+          id?: string
+          mensagem_erro?: string | null
+          nome_arquivo: string
+          status?: string
+          tipo_arquivo: string
+          total_transacoes?: number | null
+          transacoes_importadas?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          conta_bancaria_id?: string | null
+          created_at?: string
+          dados_originais?: Json | null
+          id?: string
+          mensagem_erro?: string | null
+          nome_arquivo?: string
+          status?: string
+          tipo_arquivo?: string
+          total_transacoes?: number | null
+          transacoes_importadas?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "importacoes_conta_bancaria_id_fkey"
+            columns: ["conta_bancaria_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transacoes: {
         Row: {
           anexos: Json | null

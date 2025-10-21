@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Wallet, Receipt, Tag, Building2, TrendingUp, Settings, LogOut, Menu, X, Calendar, Users, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Wallet, Receipt, Tag, Building2, TrendingUp, Settings, LogOut, Menu, X, Calendar, Users, BarChart3, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,10 @@ const navItems: NavItem[] = [{
   title: "Fluxo de Caixa",
   href: "/fluxo-caixa",
   icon: TrendingUp
+}, {
+  title: "Importação",
+  href: "/importacao",
+  icon: Upload
 }, {
   title: "Relatórios",
   href: "/relatorios/fluxo-caixa",

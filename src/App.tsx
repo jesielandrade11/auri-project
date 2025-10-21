@@ -19,6 +19,7 @@ import Contrapartes from "./pages/Contrapartes";
 import FluxoCaixaReport from "./pages/reports/FluxoCaixa";
 import DRECentroCusto from "./pages/reports/DRECentroCusto";
 import Aging from "./pages/reports/Aging";
+import Importacao from "./pages/Importacao";
 
 const queryClient = new QueryClient();
 
@@ -50,6 +51,7 @@ const App = () => (
             <Route path="relatorios/fluxo-caixa" element={<FluxoCaixaReport />} />
             <Route path="relatorios/dre" element={<DRECentroCusto />} />
             <Route path="relatorios/aging" element={<Aging />} />
+            <Route path="importacao" element={<Importacao />} />
             <Route path="configuracoes" element={<div className="p-8">Configurações em desenvolvimento</div>} />
           </Route>
           <Route path="*" element={<NotFound />} />
