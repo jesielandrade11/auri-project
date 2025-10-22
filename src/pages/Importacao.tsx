@@ -111,8 +111,24 @@ export default function Importacao() {
 
       if (importError) throw importError;
 
-      // Ler conteúdo do arquivo
-      const conteudo = await arquivo.text();
+      // Ler conteúdo do arquivo de forma apropriada
+      let conteudo: string;
+      
+      if (tipoArquivo === 'pdf') {
+        // PDFs precisam ser lidos como base64
+        const reader = new FileReader();
+        conteudo = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = () => reject(new Error('Erro ao ler arquivo PDF'));
+          reader.readAsDataURL(arquivo);
+        });
+      } else {
+        // CSV e OFX podem ser lidos como texto
+        conteudo = await arquivo.text();
+      }
 
       // Chamar edge function para processar
       const { data, error } = await supabase.functions.invoke('processar-importacao', {

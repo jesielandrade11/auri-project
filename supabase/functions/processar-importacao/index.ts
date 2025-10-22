@@ -228,39 +228,50 @@ async function processarPDF(content: string): Promise<Transaction[]> {
   if (!lovableApiKey) {
     throw new Error('LOVABLE_API_KEY não configurada');
   }
-  
-  // Limit content size before sending to AI (max 50KB)
-  const maxContentSize = 50 * 1024;
-  if (content.length > maxContentSize) {
-    content = content.substring(0, maxContentSize);
-    console.warn('Conteúdo do PDF truncado para 50KB para processamento AI');
+
+  // Decodificar base64 se necessário
+  let pdfText: string;
+  try {
+    // Tentar decodificar de base64
+    const decoded = atob(content);
+    // Extrair texto do PDF (simplificado - pega apenas texto visível)
+    pdfText = decoded.replace(/[^\x20-\x7E\n]/g, ' ').trim();
+    console.log('PDF decodificado, tamanho do texto:', pdfText.length);
+  } catch (e) {
+    // Se falhar, assumir que já é texto
+    pdfText = content;
+    console.log('Usando conteúdo como texto direto');
   }
-  
-  // Sanitize content to reduce prompt injection risks
-  const sanitizedContent = content
-    .replace(/ignore\s+previous\s+instructions/gi, '[FILTERED]')
-    .replace(/system\s*:/gi, '[FILTERED]')
-    .replace(/assistant\s*:/gi, '[FILTERED]');
-  
-  const prompt = `Você é um extrator de dados financeiros. Analise este extrato bancário e extraia APENAS as transações financeiras.
 
-REGRAS IMPORTANTES:
-1. Retorne SOMENTE um array JSON válido, sem markdown, sem explicações
-2. Não inclua aspas triplas ou qualquer formatação
-3. Use APENAS o formato especificado abaixo
+  // Sanitizar e limitar tamanho
+  const sanitizedContent = pdfText.substring(0, 30000);
+  
+  const prompt = `Você é um especialista em extrair dados de extratos bancários brasileiros. Analise este extrato e extraia TODAS as transações financeiras.
 
-Formato para cada transação:
+REGRAS CRÍTICAS:
+1. Retorne APENAS um array JSON válido - sem markdown, sem explicações, sem texto extra
+2. Não use aspas triplas (\`\`\`) ou qualquer formatação
+3. Se não encontrar transações, retorne um array vazio: []
+4. Valores sempre positivos (o tipo indica se é receita ou despesa)
+
+FORMATO EXATO para cada transação:
 {
   "data": "YYYY-MM-DD",
-  "descricao": "descrição da transação",
-  "valor": numero_positivo,
+  "descricao": "descrição clara da transação",
+  "valor": 1234.56,
   "tipo": "receita" ou "despesa"
 }
 
-Exemplo de resposta válida:
-[{"data":"2025-01-15","descricao":"Pagamento salário","valor":5000,"tipo":"receita"}]
+IDENTIFICAÇÃO DE TIPO:
+- "receita": depósitos, créditos, transferências recebidas, salário, PIX recebido
+- "despesa": saques, débitos, pagamentos, compras, PIX enviado, taxas
 
-Extrato:
+DATAS: Converter para formato YYYY-MM-DD. Se o ano não estiver claro, usar 2025.
+
+EXEMPLO DE RESPOSTA VÁLIDA:
+[{"data":"2025-01-15","descricao":"PIX recebido de João Silva","valor":500.50,"tipo":"receita"},{"data":"2025-01-16","descricao":"Compra no supermercado","valor":150.75,"tipo":"despesa"}]
+
+EXTRATO:
 ${sanitizedContent}`;
 
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -274,32 +285,34 @@ ${sanitizedContent}`;
       messages: [
         { 
           role: 'system', 
-          content: 'Você é um extrator de dados financeiros. Retorne APENAS um array JSON válido, sem markdown, sem texto adicional, sem explicações. Exemplo: [{"data":"2025-01-15","descricao":"Compra","valor":100,"tipo":"despesa"}]' 
+          content: 'Você é um extrator especializado em extratos bancários brasileiros. SEMPRE retorne APENAS um array JSON válido, sem nenhum texto adicional, sem markdown, sem explicações. Se não encontrar transações, retorne []. Formato obrigatório: [{"data":"YYYY-MM-DD","descricao":"texto","valor":numero,"tipo":"receita ou despesa"}]' 
         },
         { role: 'user', content: prompt }
       ],
+      temperature: 0.2,
+      max_tokens: 8000,
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Erro AI:', errorText);
-    throw new Error(`Erro ao processar PDF com IA: ${response.statusText}`);
+    console.error('Erro na API de IA:', response.status, errorText);
+    throw new Error(`Erro ao processar PDF com IA: ${response.status}`);
   }
 
   const data = await response.json();
   const resultText = data.choices[0]?.message?.content;
   
   if (!resultText) {
-    throw new Error('Resposta vazia da IA');
+    throw new Error('IA retornou resposta vazia');
   }
   
-  console.log('Resposta da IA (primeiros 500 chars):', resultText.substring(0, 500));
+  console.log('Resposta da IA (primeiros 1000 chars):', resultText.substring(0, 1000));
   
-  // Extrair JSON do resultado - remover markdown se houver
+  // Limpar resposta removendo markdown e texto extra
   let cleanedText = resultText.trim();
   
-  // Remover blocos de código markdown se houver
+  // Remover blocos de código markdown
   if (cleanedText.includes('```')) {
     const codeBlockMatch = cleanedText.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (codeBlockMatch) {
@@ -307,73 +320,74 @@ ${sanitizedContent}`;
     }
   }
   
-  // Procurar pelo array JSON
+  // Encontrar o array JSON na resposta
   const jsonMatch = cleanedText.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
-    console.error('Não foi possível encontrar JSON na resposta:', cleanedText);
-    throw new Error('A IA não retornou transações no formato esperado. Verifique se o PDF contém um extrato bancário válido.');
+    console.error('JSON não encontrado na resposta. Conteúdo completo:', cleanedText);
+    throw new Error('O PDF não contém um extrato bancário válido ou está em formato não suportado. Tente um PDF com texto selecionável.');
   }
   
   let parsedTransactions: any[];
   try {
     parsedTransactions = JSON.parse(jsonMatch[0]);
   } catch (error) {
-    console.error('Erro ao fazer parse do JSON:', jsonMatch[0]);
-    throw new Error('JSON inválido retornado pela IA');
+    console.error('Erro ao fazer parse do JSON:', jsonMatch[0].substring(0, 500));
+    throw new Error('Formato de resposta inválido da IA. Tente novamente ou use outro arquivo.');
   }
   
-  // Validate transaction structure
   if (!Array.isArray(parsedTransactions)) {
-    throw new Error('Resposta da IA não é um array');
+    throw new Error('IA não retornou um array de transações');
   }
   
+  if (parsedTransactions.length === 0) {
+    throw new Error('Nenhuma transação foi encontrada no PDF. Verifique se o arquivo contém um extrato bancário válido com transações.');
+  }
+  
+  // Validar e normalizar transações
   const validatedTransactions: Transaction[] = [];
   const errors: string[] = [];
   
   for (let i = 0; i < parsedTransactions.length && i < 10000; i++) {
     const trn = parsedTransactions[i];
     
-    // Validate required fields
-    if (!trn.data || !trn.descricao || trn.valor === undefined || !trn.tipo) {
-      errors.push(`Transação ${i + 1}: campos obrigatórios ausentes`);
+    // Validar campos obrigatórios
+    if (!trn.data || !trn.descricao || trn.valor === undefined || trn.valor === null || !trn.tipo) {
+      console.warn('Transação incompleta ignorada:', trn);
       continue;
     }
     
-    // Validate date
+    // Validar formato de data
     if (!isValidDate(trn.data)) {
-      errors.push(`Transação ${i + 1}: data inválida`);
+      console.warn('Data inválida ignorada:', trn.data);
       continue;
     }
     
-    // Validate amount
-    const valor = parseFloat(trn.valor);
-    if (isNaN(valor) || !isFinite(valor) || Math.abs(valor) > 999999999) {
-      errors.push(`Transação ${i + 1}: valor inválido`);
+    // Validar valor numérico
+    const valorNum = parseFloat(trn.valor.toString());
+    if (isNaN(valorNum) || valorNum <= 0) {
+      console.warn('Valor inválido ignorado:', trn.valor);
       continue;
     }
     
-    // Validate type
+    // Validar tipo
     if (trn.tipo !== 'receita' && trn.tipo !== 'despesa') {
-      errors.push(`Transação ${i + 1}: tipo inválido`);
+      console.warn('Tipo inválido ignorado:', trn.tipo);
       continue;
     }
     
     validatedTransactions.push({
       data: trn.data,
-      descricao: sanitizeCell(String(trn.descricao)),
-      valor: Math.abs(valor),
-      tipo: trn.tipo
+      descricao: sanitizeCell(String(trn.descricao).substring(0, 500)), // Limitar tamanho
+      valor: valorNum,
+      tipo: trn.tipo as 'receita' | 'despesa'
     });
   }
   
-  if (errors.length > 0) {
-    console.warn('Erros na validação de transações do PDF:', errors.slice(0, 10));
-  }
-  
   if (validatedTransactions.length === 0) {
-    throw new Error('Nenhuma transação válida extraída do PDF');
+    throw new Error('Nenhuma transação válida foi extraída. Verifique se o PDF contém transações em formato legível.');
   }
   
+  console.log(`✓ Extraídas ${validatedTransactions.length} transações válidas do PDF`);
   return validatedTransactions;
 }
 
