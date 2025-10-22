@@ -483,8 +483,23 @@ export default function Contas() {
                               const { data: tokenData, error: tokenError } = await supabase.functions.invoke('pluggy-connect-token');
                               
                               if (tokenError) {
-                                console.error('Token error:', tokenError);
+                                console.error('❌ Token error:', tokenError);
+                                toast({
+                                  title: "Erro na conexão",
+                                  description: "Não foi possível conectar com o Pluggy. Verifique suas credenciais.",
+                                  variant: "destructive"
+                                });
                                 throw tokenError;
+                              }
+                              
+                              if (!tokenData?.accessToken) {
+                                console.error('❌ No access token received:', tokenData);
+                                toast({
+                                  title: "Erro de autenticação",
+                                  description: "Token de acesso não foi recebido do servidor.",
+                                  variant: "destructive"
+                                });
+                                throw new Error('No access token received');
                               }
                               
                               console.log('✅ Connect token received');
@@ -508,8 +523,13 @@ export default function Contas() {
                                     resolve();
                                   };
                                   
-                                  script.onerror = () => {
+                                   script.onerror = () => {
                                     console.error('❌ Failed to load Pluggy script');
+                                    toast({
+                                      title: "Erro ao carregar Pluggy",
+                                      description: "Não foi possível carregar o widget. Tente recarregar a página (Ctrl+Shift+R).",
+                                      variant: "destructive"
+                                    });
                                     reject(new Error('Failed to load Pluggy script'));
                                   };
                                   
