@@ -70,6 +70,7 @@ export default function Transacoes() {
   const [controleSaldoOpen, setControleSaldoOpen] = useState(false);
   const [editando, setEditando] = useState<Transacao | null>(null);
   const [selecionados, setSelecionados] = useState<string[]>([]);
+  const [selecionadosHistorico, setSelecionadosHistorico] = useState<string[]>([]);
   const [dataBaixa, setDataBaixa] = useState(new Date().toISOString().split("T")[0]);
   const [contaBaixa, setContaBaixa] = useState("");
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
@@ -497,6 +498,83 @@ export default function Transacoes() {
     }
   };
 
+  const handleDeleteSelecionadosHistorico = async () => {
+    if (selecionadosHistorico.length === 0) return;
+    if (!confirm(`Tem certeza que deseja excluir ${selecionadosHistorico.length} transação(ões)?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from("transacoes")
+        .delete()
+        .in("id", selecionadosHistorico);
+
+      if (error) throw error;
+
+      toast({
+        title: "Transações excluídas",
+        description: `${selecionadosHistorico.length} transação(ões) excluída(s) com sucesso`,
+      });
+
+      setSelecionadosHistorico([]);
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao excluir transações",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteSelecionadosAVencer = async () => {
+    if (selecionados.length === 0) return;
+    if (!confirm(`Tem certeza que deseja excluir ${selecionados.length} item(ns)?`)) return;
+
+    try {
+      // Separar transações e DDAs
+      const transacoesIds = selecionados.filter(id => 
+        transacoesAVencer.find(t => t.id === id && t.tipo === 'transacao')
+      );
+      const ddasIds = selecionados.filter(id => 
+        transacoesAVencer.find(t => t.id === id && t.tipo === 'dda')
+      );
+
+      // Excluir transações
+      if (transacoesIds.length > 0) {
+        const { error: transacoesError } = await supabase
+          .from("transacoes")
+          .delete()
+          .in("id", transacoesIds);
+
+        if (transacoesError) throw transacoesError;
+      }
+
+      // Excluir DDAs
+      if (ddasIds.length > 0) {
+        const { error: ddasError } = await supabase
+          .from("dda_boletos")
+          .delete()
+          .in("id", ddasIds);
+
+        if (ddasError) throw ddasError;
+      }
+
+      toast({
+        title: "Itens excluídos",
+        description: `${selecionados.length} item(ns) excluído(s) com sucesso`,
+      });
+
+      setSelecionados([]);
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao excluir itens",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const totalReceitas = transacoes
     .filter((t) => t.tipo === "receita")
     .reduce((sum, t) => sum + Number(t.valor), 0);
@@ -785,16 +863,36 @@ export default function Transacoes() {
                     Últimas {transacoes.length} transações registradas
                   </CardDescription>
                 </div>
-                <Button variant="outline" onClick={() => setControleSaldoOpen(true)}>
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  Controle de Saldos
-                </Button>
+                <div className="flex gap-2">
+                  {selecionadosHistorico.length > 0 && (
+                    <Button variant="destructive" onClick={handleDeleteSelecionadosHistorico}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Excluir Selecionados ({selecionadosHistorico.length})
+                    </Button>
+                  )}
+                  <Button variant="outline" onClick={() => setControleSaldoOpen(true)}>
+                    <DollarSign className="h-4 w-4 mr-2" />
+                    Controle de Saldos
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={selecionadosHistorico.length === transacoes.length && transacoes.length > 0}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelecionadosHistorico(transacoes.map(t => t.id));
+                          } else {
+                            setSelecionadosHistorico([]);
+                          }
+                        }}
+                      />
+                    </TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead>Descrição</TableHead>
                     <TableHead>Categoria</TableHead>
@@ -806,13 +904,25 @@ export default function Transacoes() {
                 <TableBody>
                   {transacoes.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                         Nenhuma transação encontrada
                       </TableCell>
                     </TableRow>
                   ) : (
                     transacoes.map((transacao) => (
                       <TableRow key={transacao.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selecionadosHistorico.includes(transacao.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelecionadosHistorico([...selecionadosHistorico, transacao.id]);
+                              } else {
+                                setSelecionadosHistorico(selecionadosHistorico.filter(id => id !== transacao.id));
+                              }
+                            }}
+                          />
+                        </TableCell>
                         <TableCell>
                           {new Date(transacao.data_transacao).toLocaleDateString("pt-BR")}
                         </TableCell>
@@ -907,10 +1017,16 @@ export default function Transacoes() {
                   </CardDescription>
                 </div>
                 {selecionados.length > 0 && (
-                  <Button onClick={() => setBaixaDialogOpen(true)}>
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Baixar Selecionados ({selecionados.length})
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="destructive" onClick={handleDeleteSelecionadosAVencer}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Excluir ({selecionados.length})
+                    </Button>
+                    <Button onClick={() => setBaixaDialogOpen(true)}>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Baixar ({selecionados.length})
+                    </Button>
+                  </div>
                 )}
               </div>
             </CardHeader>
