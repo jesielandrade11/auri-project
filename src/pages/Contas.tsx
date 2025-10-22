@@ -523,13 +523,8 @@ export default function Contas() {
                                     resolve();
                                   };
                                   
-                                   script.onerror = () => {
-                                    console.error('❌ Failed to load Pluggy script');
-                                    toast({
-                                      title: "Erro ao carregar Pluggy",
-                                      description: "Não foi possível carregar o widget. Tente recarregar a página (Ctrl+Shift+R).",
-                                      variant: "destructive"
-                                    });
+                                   script.onerror = (error) => {
+                                    console.error('❌ Failed to load Pluggy script:', error);
                                     reject(new Error('Failed to load Pluggy script'));
                                   };
                                   
@@ -537,7 +532,18 @@ export default function Contas() {
                                 });
                               };
                               
-                              await loadPluggyScript();
+                              try {
+                                await loadPluggyScript();
+                              } catch (scriptError) {
+                                console.error('Script load error:', scriptError);
+                                toast({
+                                  title: "Erro ao carregar integração",
+                                  description: "Não foi possível carregar o Pluggy. Verifique sua conexão e tente novamente.",
+                                  variant: "destructive"
+                                });
+                                setLoadingPluggy(false);
+                                return;
+                              }
                               
                               console.log('🚀 Initializing Pluggy Connect Widget v3...');
                               
@@ -629,14 +635,18 @@ export default function Contas() {
                               
                               pluggyConnect.init();
                               
-                            } catch (error) {
+                            } catch (error: any) {
                               console.error('❌ Error initializing Pluggy:', error);
                               setLoadingPluggy(false);
-                              toast({
-                                title: "Erro",
-                                description: error instanceof Error ? error.message : "Não foi possível inicializar a conexão com Pluggy.",
-                                variant: "destructive"
-                              });
+                              
+                              // Only show toast if we haven't already shown one from script loading
+                              if (!error?.message?.includes('Failed to load Pluggy script')) {
+                                toast({
+                                  title: "Erro na inicialização",
+                                  description: error?.message || "Não foi possível inicializar a conexão com Pluggy.",
+                                  variant: "destructive"
+                                });
+                              }
                             }
                           }}
                           disabled={loadingPluggy}
