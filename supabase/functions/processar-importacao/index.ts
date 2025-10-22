@@ -453,7 +453,7 @@ serve(async (req) => {
           descricao: trn.descricao,
           valor: trn.valor,
           tipo: trn.tipo,
-          status: 'concluido',
+          status: 'pago',
           origem: 'importacao',
           arquivo_origem: tipoArquivo,
           data_competencia: trn.data
