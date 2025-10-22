@@ -1,6 +1,4 @@
-// Edge Function: Pluggy Connect Token - v4.0 (Final credentials fix - CLIENT_ID: 2d7f4bd3, SECRET: 90363ae1)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,13 +15,8 @@ serve(async (req) => {
     const PLUGGY_CLIENT_SECRET = Deno.env.get('PLUGGY_CLIENT_SECRET');
 
     console.log('🔍 Checking Pluggy credentials for connect token...');
-    console.log('CLIENT_ID exists:', !!PLUGGY_CLIENT_ID);
-    console.log('CLIENT_SECRET exists:', !!PLUGGY_CLIENT_SECRET);
-    console.log('CLIENT_ID (FULL for debugging):', PLUGGY_CLIENT_ID);
-    console.log('CLIENT_SECRET (FULL for debugging):', PLUGGY_CLIENT_SECRET);
-    console.log('CLIENT_ID length:', PLUGGY_CLIENT_ID?.length);
-    console.log('CLIENT_SECRET length:', PLUGGY_CLIENT_SECRET?.length);
-    console.log('Are they identical?:', PLUGGY_CLIENT_ID === PLUGGY_CLIENT_SECRET);
+    console.log('CLIENT_ID configured:', !!PLUGGY_CLIENT_ID);
+    console.log('CLIENT_SECRET configured:', !!PLUGGY_CLIENT_SECRET);
 
     if (!PLUGGY_CLIENT_ID || !PLUGGY_CLIENT_SECRET) {
       console.error('❌ Pluggy credentials not found');
@@ -39,23 +32,8 @@ serve(async (req) => {
       console.error('❌ CLIENT_SECRET has leading/trailing whitespace');
       throw new Error('CLIENT_SECRET has invalid format (whitespace detected)');
     }
-    
-    // Final check before sending to Pluggy
-    const expectedClientIdStart = '2d7f4bd3';
-    const expectedSecretStart = '90363ae1';
-    
-    if (!PLUGGY_CLIENT_ID.startsWith(expectedClientIdStart)) {
-      console.error('❌ CLIENT_ID does not start with expected value!');
-      console.error('Expected:', expectedClientIdStart, 'Got:', PLUGGY_CLIENT_ID.substring(0, 8));
-    }
-    
-    if (!PLUGGY_CLIENT_SECRET.startsWith(expectedSecretStart)) {
-      console.error('❌ CLIENT_SECRET does not start with expected value!');
-      console.error('Expected:', expectedSecretStart, 'Got:', PLUGGY_CLIENT_SECRET.substring(0, 8));
-    }
 
     console.log('🔐 Step 1: Authenticating with Pluggy...');
-    console.log('Using endpoint: https://api.pluggy.ai/auth');
 
     // Authenticate with Pluggy
     const authResponse = await fetch('https://api.pluggy.ai/auth', {

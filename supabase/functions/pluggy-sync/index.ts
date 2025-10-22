@@ -12,9 +12,29 @@ serve(async (req) => {
   }
 
   try {
+    // Get authenticated user ID from JWT token
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('Authorization header required');
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    // Create client with anon key to verify user authentication
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    // Verify user is authenticated
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    if (authError || !user) {
+      console.error('❌ Authentication failed:', authError);
+      throw new Error('Authentication required');
+    }
+
+    console.log('✅ User authenticated:', user.id);
 
     const PLUGGY_CLIENT_ID = Deno.env.get('PLUGGY_CLIENT_ID');
     const PLUGGY_CLIENT_SECRET = Deno.env.get('PLUGGY_CLIENT_SECRET');
@@ -30,16 +50,20 @@ serve(async (req) => {
 
     console.log('🏦 Syncing account:', contaId);
 
-    // Get account details
+    // Create service role client for RLS bypass (only after user verification)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Verify account ownership before syncing
     const { data: conta, error: contaError } = await supabase
       .from('contas_bancarias')
       .select('*')
       .eq('id', contaId)
+      .eq('user_id', user.id)
       .single();
 
     if (contaError || !conta) {
-      console.error('❌ Account not found:', contaError);
-      throw new Error('Account not found');
+      console.error('❌ Account not found or access denied');
+      throw new Error('Account not found or access denied');
     }
 
     console.log('✅ Account found:', conta.nome);
