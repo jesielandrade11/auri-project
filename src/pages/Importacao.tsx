@@ -23,11 +23,37 @@ export default function Importacao() {
   }, []);
 
   const carregarContas = async () => {
-    const { data } = await supabase
-      .from("contas_bancarias")
-      .select("*")
-      .order("nome");
-    if (data) setContas(data);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Erro",
+          description: "Usuário não autenticado",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("contas_bancarias")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("nome_banco");
+      
+      if (error) {
+        console.error("Erro ao carregar contas:", error);
+        toast({
+          title: "Erro ao carregar contas",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      if (data) setContas(data);
+    } catch (error) {
+      console.error("Erro ao carregar contas:", error);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -133,11 +159,17 @@ export default function Importacao() {
                     <SelectValue placeholder="Selecione a conta" />
                   </SelectTrigger>
                   <SelectContent>
-                    {contas.map((conta) => (
-                      <SelectItem key={conta.id} value={conta.id}>
-                        {conta.nome} - {conta.banco}
+                    {contas.length === 0 ? (
+                      <SelectItem value="sem-contas" disabled>
+                        Nenhuma conta cadastrada
                       </SelectItem>
-                    ))}
+                    ) : (
+                      contas.map((conta) => (
+                        <SelectItem key={conta.id} value={conta.id}>
+                          {conta.nome_banco} {conta.agencia && conta.conta ? `- ${conta.agencia}/${conta.conta}` : ''}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
