@@ -189,12 +189,146 @@ export default function Contas() {
     }
   };
 
-  const handleSyncAccount = async (id: string) => {
-    setSyncing(id);
+  const openPluggyConnect = async (conta: ContaBancaria) => {
+    if (loadingPluggy) return;
+    
+    setLoadingPluggy(true);
+    setSyncing(conta.id);
+    
+    try {
+      const { data: tokenData, error: tokenError } = await supabase.functions.invoke('pluggy-connect-token');
+      
+      if (tokenError || !tokenData?.connectToken) {
+        throw new Error(tokenError?.message || 'Falha ao obter token de conexão');
+      }
+      
+      const script = document.createElement('script');
+      script.src = 'https://cdn.pluggy.ai/pluggy-connect/v3.0.0.js';
+      script.async = true;
+      
+      script.onerror = () => {
+        setLoadingPluggy(false);
+        setSyncing(null);
+        toast({
+          title: "Erro ao carregar",
+          description: "Não foi possível carregar o serviço de conexão bancária.",
+          variant: "destructive"
+        });
+      };
+      
+      script.onload = () => {
+        if (!window.PluggyConnect) {
+          setLoadingPluggy(false);
+          setSyncing(null);
+          toast({
+            title: "Erro",
+            description: "Serviço de conexão não disponível.",
+            variant: "destructive"
+          });
+          return;
+        }
+        
+        const pluggyConnect = window.PluggyConnect({
+          connectToken: tokenData.connectToken,
+          includeSandbox: false,
+          onSuccess: async (itemData: any) => {
+            try {
+              // Atualizar conta com dados do Pluggy
+              const { error: updateError } = await supabase
+                .from('contas_bancarias')
+                .update({
+                  pluggy_item_id: itemData.item.id,
+                  pluggy_connector_id: itemData.item.connector?.id,
+                  ultima_sincronizacao: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', conta.id);
+              
+              if (updateError) throw updateError;
+              
+              toast({
+                title: "Conexão estabelecida!",
+                description: "Conta conectada ao Pluggy com sucesso. Sincronizando transações...",
+              });
+              
+              loadContas();
+              
+              // Sincronizar transações em background
+              supabase.functions.invoke('pluggy-sync', {
+                body: { contaId: conta.id }
+              }).then(() => {
+                toast({
+                  title: "Sincronização concluída",
+                  description: "Transações importadas com sucesso!",
+                });
+                loadContas();
+              }).catch(err => {
+                console.error('Initial sync error:', err);
+                toast({
+                  title: "Aviso",
+                  description: "Conta conectada, mas houve erro ao sincronizar transações. Tente novamente.",
+                  variant: "destructive"
+                });
+              });
+              
+            } catch (error) {
+              console.error('Error updating account:', error);
+              toast({
+                title: "Erro ao salvar conexão",
+                description: "A conexão foi estabelecida mas houve erro ao salvar.",
+                variant: "destructive"
+              });
+            } finally {
+              setLoadingPluggy(false);
+              setSyncing(null);
+            }
+          },
+          onError: (error: any) => {
+            console.error('Pluggy connection error:', error);
+            setLoadingPluggy(false);
+            setSyncing(null);
+            toast({
+              title: "Erro na conexão",
+              description: error?.message || "Não foi possível conectar ao banco via Pluggy.",
+              variant: "destructive"
+            });
+          },
+          onClose: () => {
+            setLoadingPluggy(false);
+            setSyncing(null);
+          }
+        });
+        
+        pluggyConnect.init();
+      };
+      
+      document.body.appendChild(script);
+      
+    } catch (error: any) {
+      console.error('Error initializing Pluggy:', error);
+      setLoadingPluggy(false);
+      setSyncing(null);
+      toast({
+        title: "Erro na inicialização",
+        description: error?.message || "Não foi possível inicializar a conexão com Pluggy.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSyncAccount = async (conta: ContaBancaria) => {
+    // Se não tiver pluggy_item_id, abrir widget do Pluggy para conectar
+    if (!conta.pluggy_item_id) {
+      await openPluggyConnect(conta);
+      return;
+    }
+    
+    // Se já tiver conectado, fazer sincronização
+    setSyncing(conta.id);
     
     try {
       const { data, error } = await supabase.functions.invoke('pluggy-sync', {
-        body: { contaId: id }
+        body: { contaId: conta.id }
       });
 
       if (error) throw error;
@@ -209,7 +343,7 @@ export default function Contas() {
       console.error('Erro ao sincronizar:', error);
       toast({
         title: "Erro na sincronização",
-        description: "Não foi possível sincronizar a conta. Verifique se está conectada ao Pluggy.",
+        description: "Não foi possível sincronizar a conta. Tente reconectar ao Pluggy.",
         variant: "destructive"
       });
     } finally {
@@ -869,11 +1003,20 @@ export default function Contas() {
                     variant="outline"
                     size="sm"
                     className="flex-1"
-                    onClick={() => handleSyncAccount(conta.id)}
-                    disabled={syncing === conta.id}
+                    onClick={() => handleSyncAccount(conta)}
+                    disabled={syncing === conta.id || loadingPluggy}
                   >
-                    <RefreshCw className={`w-4 h-4 mr-1 ${syncing === conta.id ? 'animate-spin' : ''}`} />
-                    Sincronizar
+                    {syncing === conta.id ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        {conta.pluggy_item_id ? 'Sincronizando...' : 'Conectando...'}
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-1" />
+                        {conta.pluggy_item_id ? 'Sincronizar' : 'Conectar Pluggy'}
+                      </>
+                    )}
                   </Button>
                   <Button 
                     variant="outline" 
