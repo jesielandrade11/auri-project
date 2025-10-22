@@ -441,9 +441,36 @@ serve(async (req) => {
       throw new Error('Importação não encontrada');
     }
 
-    // Inserir transações
+    // Inserir transações com verificação de duplicatas
     let importadas = 0;
+    let duplicadas = 0;
+    
     for (const trn of transactions) {
+      // Extrair mês e ano da data da transação
+      const dataTransacao = new Date(trn.data);
+      const mesAno = `${dataTransacao.getFullYear()}-${String(dataTransacao.getMonth() + 1).padStart(2, '0')}`;
+      
+      // Verificar se já existe transação duplicada no mesmo mês
+      const { data: duplicata } = await supabaseClient
+        .from('transacoes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('conta_bancaria_id', importacao.conta_bancaria_id)
+        .eq('data_transacao', trn.data)
+        .eq('descricao', trn.descricao)
+        .eq('valor', trn.valor)
+        .eq('tipo', trn.tipo)
+        .gte('data_transacao', `${mesAno}-01`)
+        .lte('data_transacao', `${mesAno}-31`)
+        .limit(1);
+      
+      if (duplicata && duplicata.length > 0) {
+        duplicadas++;
+        console.log(`Transação duplicada ignorada: ${trn.descricao} - ${trn.valor} em ${trn.data}`);
+        continue;
+      }
+      
+      // Inserir transação se não for duplicada
       const { error } = await supabaseClient
         .from('transacoes')
         .insert({
@@ -473,13 +500,14 @@ serve(async (req) => {
       })
       .eq('id', importacaoId);
 
-    console.log(`Importação concluída: ${importadas}/${transactions.length} transações`);
+    console.log(`Importação concluída: ${importadas}/${transactions.length} transações (${duplicadas} duplicadas ignoradas)`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         total: transactions.length,
-        importadas 
+        importadas,
+        duplicadas
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
