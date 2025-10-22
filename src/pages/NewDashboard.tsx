@@ -326,7 +326,7 @@ const NewDashboard = () => {
                 Dashboard Executivo
               </h1>
               <p className="text-muted-foreground mt-2">
-                Visão completa das finanças • {format(parseISO(filters.dataInicio), "dd 'de' MMMM", { locale: ptBR })} até {format(parseISO(filters.dataFim), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                Visão completa das finanças • {filters.dataInicio && filters.dataFim ? `${format(parseISO(filters.dataInicio), "dd 'de' MMMM", { locale: ptBR })} até ${format(parseISO(filters.dataFim), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}` : ''}
               </p>
             </div>
 
