@@ -1,10 +1,31 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
+import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-pluggy-signature',
 };
+
+// Verify Pluggy webhook signature
+function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  const hmac = createHmac('sha256', secret);
+  hmac.update(payload);
+  const expectedSignature = hmac.digest('hex');
+  return signature === expectedSignature;
+}
+
+// Validate webhook event structure
+function validateEventStructure(event: any): boolean {
+  if (!event || typeof event !== 'object') return false;
+  if (!event.event || typeof event.event !== 'string') return false;
+  if (!event.data || typeof event.data !== 'object') return false;
+  
+  const allowedEvents = ['item/created', 'item/updated', 'item/deleted', 'item/error'];
+  if (!allowedEvents.includes(event.event)) return false;
+  
+  return true;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -18,11 +39,48 @@ serve(async (req) => {
 
     const PLUGGY_CLIENT_ID = Deno.env.get('PLUGGY_CLIENT_ID');
     const PLUGGY_CLIENT_SECRET = Deno.env.get('PLUGGY_CLIENT_SECRET');
+    const PLUGGY_WEBHOOK_SECRET = Deno.env.get('PLUGGY_WEBHOOK_SECRET');
 
     console.log('📥 Pluggy webhook triggered');
-    console.log('Credentials present:', !!PLUGGY_CLIENT_ID, !!PLUGGY_CLIENT_SECRET);
+    console.log('Credentials present:', !!PLUGGY_CLIENT_ID, !!PLUGGY_CLIENT_SECRET, 'Webhook secret:', !!PLUGGY_WEBHOOK_SECRET);
 
-    const event = await req.json();
+    // Get raw request body for signature verification
+    const rawBody = await req.text();
+    const signature = req.headers.get('x-pluggy-signature');
+
+    // Verify webhook signature if secret is configured
+    if (PLUGGY_WEBHOOK_SECRET) {
+      if (!signature) {
+        console.error('❌ Missing webhook signature');
+        return new Response(JSON.stringify({ error: 'Missing signature' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!verifyWebhookSignature(rawBody, signature, PLUGGY_WEBHOOK_SECRET)) {
+        console.error('❌ Invalid webhook signature');
+        return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      console.log('✅ Webhook signature verified');
+    } else {
+      console.warn('⚠️ PLUGGY_WEBHOOK_SECRET not configured - signature verification skipped');
+    }
+
+    const event = JSON.parse(rawBody);
+    
+    // Validate event structure
+    if (!validateEventStructure(event)) {
+      console.error('❌ Invalid webhook event structure');
+      return new Response(JSON.stringify({ error: 'Invalid event structure' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log('📦 Webhook event received:', JSON.stringify(event, null, 2));
 
     console.log('🔐 Authenticating with Pluggy for webhook processing...');
