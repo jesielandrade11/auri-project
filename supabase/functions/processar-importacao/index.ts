@@ -448,25 +448,32 @@ serve(async (req) => {
     for (const trn of transactions) {
       // Extrair mês e ano da data da transação
       const dataTransacao = new Date(trn.data);
-      const mesAno = `${dataTransacao.getFullYear()}-${String(dataTransacao.getMonth() + 1).padStart(2, '0')}`;
+      const ano = dataTransacao.getFullYear();
+      const mes = dataTransacao.getMonth() + 1;
+      const primeiroDiaMes = `${ano}-${String(mes).padStart(2, '0')}-01`;
+      const ultimoDiaMes = `${ano}-${String(mes).padStart(2, '0')}-${new Date(ano, mes, 0).getDate()}`;
       
       // Verificar se já existe transação duplicada no mesmo mês
-      const { data: duplicata } = await supabaseClient
+      // com mesma descrição, valor e tipo (mesmo que em data diferente do mês)
+      const { data: duplicata, error: erroConsulta } = await supabaseClient
         .from('transacoes')
-        .select('id')
+        .select('id, data_transacao, descricao, valor')
         .eq('user_id', user.id)
         .eq('conta_bancaria_id', importacao.conta_bancaria_id)
-        .eq('data_transacao', trn.data)
         .eq('descricao', trn.descricao)
         .eq('valor', trn.valor)
         .eq('tipo', trn.tipo)
-        .gte('data_transacao', `${mesAno}-01`)
-        .lte('data_transacao', `${mesAno}-31`)
+        .gte('data_transacao', primeiroDiaMes)
+        .lte('data_transacao', ultimoDiaMes)
         .limit(1);
+      
+      if (erroConsulta) {
+        console.error('Erro ao verificar duplicata:', erroConsulta);
+      }
       
       if (duplicata && duplicata.length > 0) {
         duplicadas++;
-        console.log(`Transação duplicada ignorada: ${trn.descricao} - ${trn.valor} em ${trn.data}`);
+        console.log(`✗ Duplicada ignorada: ${trn.descricao} - R$ ${trn.valor} (${trn.data}) - Já existe em ${duplicata[0].data_transacao}`);
         continue;
       }
       
@@ -486,7 +493,12 @@ serve(async (req) => {
           data_competencia: trn.data
         });
 
-      if (!error) importadas++;
+      if (!error) {
+        importadas++;
+        console.log(`✓ Importada: ${trn.descricao} - R$ ${trn.valor} (${trn.data})`);
+      } else {
+        console.error('Erro ao inserir transação:', error);
+      }
     }
 
     // Atualizar importação
