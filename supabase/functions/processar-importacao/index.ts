@@ -391,6 +391,101 @@ ${sanitizedContent}`;
   return validatedTransactions;
 }
 
+// Função para detectar e vincular transferências entre contas
+async function detectarTransferencias(supabase: any, userId: string, contaId?: string) {
+  try {
+    // Buscar transações recentes (últimos 30 dias) não vinculadas
+    const dataLimite = new Date();
+    dataLimite.setDate(dataLimite.getDate() - 30);
+
+    const query = supabase
+      .from('transacoes')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('data_transacao', dataLimite.toISOString().split('T')[0])
+      .is('transferencia_vinculada_id', null);
+
+    if (contaId) {
+      query.eq('conta_bancaria_id', contaId);
+    }
+
+    const { data: transacoes, error } = await query;
+
+    if (error) {
+      console.error('❌ Erro ao buscar transações:', error);
+      return;
+    }
+
+    console.log(`📊 Analisando ${transacoes.length} transações para detectar transferências...`);
+
+    let transferenciasDetectadas = 0;
+
+    // Para cada transação, procurar sua par (entrada/saída com mesmo valor e data próxima)
+    for (const transacao of transacoes) {
+      // Pular se já está vinculada
+      if (transacao.transferencia_vinculada_id) continue;
+
+      // Determinar tipo oposto
+      const tipoOposto = transacao.tipo === 'receita' ? 'despesa' : 'receita';
+
+      // Buscar transação correspondente:
+      // - Mesmo valor
+      // - Tipo oposto
+      // - Mesma data ou data próxima (até 2 dias de diferença)
+      // - Conta diferente
+      // - Ainda não vinculada
+      const dataTransacao = new Date(transacao.data_transacao);
+      const dataMin = new Date(dataTransacao);
+      const dataMax = new Date(dataTransacao);
+      dataMin.setDate(dataMin.getDate() - 2);
+      dataMax.setDate(dataMax.getDate() + 2);
+
+      const { data: candidatos } = await supabase
+        .from('transacoes')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('tipo', tipoOposto)
+        .eq('valor', transacao.valor)
+        .neq('conta_bancaria_id', transacao.conta_bancaria_id)
+        .gte('data_transacao', dataMin.toISOString().split('T')[0])
+        .lte('data_transacao', dataMax.toISOString().split('T')[0])
+        .is('transferencia_vinculada_id', null)
+        .limit(1);
+
+      if (candidatos && candidatos.length > 0) {
+        const par = candidatos[0];
+
+        // Vincular as duas transações
+        const tipoOrigem = transacao.tipo === 'despesa' ? 'origem' : 'destino';
+        const tipoDestino = par.tipo === 'despesa' ? 'origem' : 'destino';
+
+        await supabase
+          .from('transacoes')
+          .update({
+            transferencia_vinculada_id: par.id,
+            tipo_transferencia: tipoOrigem,
+          })
+          .eq('id', transacao.id);
+
+        await supabase
+          .from('transacoes')
+          .update({
+            transferencia_vinculada_id: transacao.id,
+            tipo_transferencia: tipoDestino,
+          })
+          .eq('id', par.id);
+
+        transferenciasDetectadas++;
+        console.log(`✅ Transferência detectada: ${transacao.descricao} <-> ${par.descricao} (R$ ${transacao.valor})`);
+      }
+    }
+
+    console.log(`✅ Total de ${transferenciasDetectadas} transferências detectadas e vinculadas`);
+  } catch (error) {
+    console.error('❌ Erro ao detectar transferências:', error);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -500,6 +595,10 @@ serve(async (req) => {
         console.error('Erro ao inserir transação:', error);
       }
     }
+
+    // Detectar e vincular transferências entre contas
+    console.log('🔄 Detectando transferências entre contas...');
+    await detectarTransferencias(supabaseClient, user.id, importacao.conta_bancaria_id);
 
     // Atualizar importação
     await supabaseClient

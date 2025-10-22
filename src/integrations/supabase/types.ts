@@ -521,6 +521,8 @@ export type Database = {
           status: string | null
           tags: string[] | null
           tipo: string
+          tipo_transferencia: string | null
+          transferencia_vinculada_id: string | null
           updated_at: string | null
           user_id: string
           usuario_conciliacao: string | null
@@ -557,6 +559,8 @@ export type Database = {
           status?: string | null
           tags?: string[] | null
           tipo: string
+          tipo_transferencia?: string | null
+          transferencia_vinculada_id?: string | null
           updated_at?: string | null
           user_id: string
           usuario_conciliacao?: string | null
@@ -593,6 +597,8 @@ export type Database = {
           status?: string | null
           tags?: string[] | null
           tipo?: string
+          tipo_transferencia?: string | null
+          transferencia_vinculada_id?: string | null
           updated_at?: string | null
           user_id?: string
           usuario_conciliacao?: string | null

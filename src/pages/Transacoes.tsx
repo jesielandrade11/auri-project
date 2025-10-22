@@ -926,7 +926,7 @@ export default function Transacoes() {
                         <TableCell>
                           {new Date(transacao.data_transacao).toLocaleDateString("pt-BR")}
                         </TableCell>
-                        <TableCell>
+                         <TableCell>
                           <div>
                             <div className="font-medium">{transacao.descricao}</div>
                             {transacao.observacoes && (
@@ -934,11 +934,18 @@ export default function Transacoes() {
                                 {transacao.observacoes}
                               </div>
                             )}
-                            {(transacao.origem === 'api' || transacao.origem === 'importacao') && (
-                              <Badge variant="outline" className="mt-1">
-                                {transacao.origem === 'api' ? '🔗 API' : '📁 Importação'}
-                              </Badge>
-                            )}
+                            <div className="flex gap-1 mt-1">
+                              {(transacao.origem === 'api' || transacao.origem === 'importacao') && (
+                                <Badge variant="outline">
+                                  {transacao.origem === 'api' ? '🔗 API' : '📁 Importação'}
+                                </Badge>
+                              )}
+                              {transacao.transferencia_vinculada_id && (
+                                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                                  🔄 Transferência {transacao.tipo_transferencia === 'origem' ? 'enviada' : 'recebida'}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
