@@ -82,17 +82,30 @@ export default function Importacao() {
 
     setLoading(true);
     try {
+      // Obter usuário autenticado
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Erro",
+          description: "Usuário não autenticado",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
       const tipoArquivo = getTipoArquivo(arquivo.name);
       
-      // Criar registro de importação
+      // Criar registro de importação com user_id
       const { data: importacao, error: importError } = await supabase
         .from("importacoes")
         .insert([{
+          user_id: user.id,
           tipo_arquivo: tipoArquivo,
           nome_arquivo: arquivo.name,
           conta_bancaria_id: contaBancariaId,
           status: 'processando'
-        }] as any)
+        }])
         .select()
         .single();
 
