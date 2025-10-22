@@ -52,7 +52,7 @@ interface TransacaoAVencer {
   valor: number;
   categoria?: string;
   conta?: string;
-  conta_id?: string;
+  conta_bancaria_id?: string;
   status: string;
   original: TransacaoComDados | DDABoletoComConta;
 }
@@ -94,7 +94,7 @@ export default function Transacoes() {
     tipo: "despesa" as "receita" | "despesa",
     categoria_id: "",
     centro_custo_id: "",
-    conta_id: "",
+    conta_bancaria_id: "",
     status: "agendado",
     observacoes: "",
   });
@@ -118,7 +118,7 @@ export default function Transacoes() {
           *,
           categoria:categoria_id(nome, icone, cor),
           centro_custo:centro_custo_id(nome, codigo),
-          conta:conta_id(nome_banco)
+          conta:conta_bancaria_id(nome_banco)
         `)
         .eq("user_id", user.id)
         .eq("status", "pago")
@@ -134,7 +134,7 @@ export default function Transacoes() {
           *,
           categoria:categoria_id(nome, icone, cor),
           centro_custo:centro_custo_id(nome, codigo),
-          conta:conta_id(nome_banco)
+          conta:conta_bancaria_id(nome_banco)
         `)
         .eq("user_id", user.id)
         .in("status", ["pendente", "agendado"])
@@ -199,7 +199,7 @@ export default function Transacoes() {
           valor: Number(t.valor),
           categoria: t.categoria?.nome,
           conta: t.conta?.nome_banco,
-          conta_id: t.conta_id || undefined,
+          conta_bancaria_id: t.conta_bancaria_id || undefined,
           status: t.status || 'pendente',
           original: t,
         });
@@ -215,7 +215,7 @@ export default function Transacoes() {
           descricao: b.beneficiario,
           valor: Number(b.valor),
           conta: conta?.nome_banco,
-          conta_id: b.conta_bancaria_id,
+          conta_bancaria_id: b.conta_bancaria_id,
           status: b.status,
           original: b,
         });
@@ -249,7 +249,7 @@ export default function Transacoes() {
       tipo: "despesa",
       categoria_id: "",
       centro_custo_id: "",
-      conta_id: "",
+      conta_bancaria_id: "",
       status: "agendado",
       observacoes: "",
     });
@@ -276,10 +276,10 @@ export default function Transacoes() {
           *,
           categoria:categoria_id(nome, icone, cor),
           centro_custo:centro_custo_id(nome, codigo),
-          conta:conta_id(nome_banco)
+          conta:conta_bancaria_id(nome_banco)
         `)
         .eq("user_id", user.id)
-        .eq("conta_id", contaConciliacao)
+        .eq("conta_bancaria_id", contaConciliacao)
         .eq("conciliado", false)
         .in("status", ["agendado", "pendente"])
         .gte("data_transacao", dataInicialConciliacao)
@@ -366,7 +366,7 @@ export default function Transacoes() {
         tipo: transacao.tipo as "receita" | "despesa",
         categoria_id: transacao.categoria_id || "",
         centro_custo_id: transacao.centro_custo_id || "",
-        conta_id: transacao.conta_id || "",
+        conta_bancaria_id: transacao.conta_bancaria_id || "",
         status: transacao.status || "agendado",
         observacoes: transacao.observacoes || "",
       });
@@ -384,7 +384,7 @@ export default function Transacoes() {
         tipo: transacaoEditada.tipo as "receita" | "despesa",
         categoria_id: transacaoEditada.categoria_id || "",
         centro_custo_id: transacaoEditada.centro_custo_id || "",
-        conta_id: transacaoEditada.conta_id || "",
+        conta_bancaria_id: transacaoEditada.conta_bancaria_id || "",
         status: transacaoEditada.status || "agendado",
         observacoes: transacaoEditada.observacoes || "",
       });
@@ -425,7 +425,7 @@ export default function Transacoes() {
             tipo: formData.tipo,
             categoria_id: formData.categoria_id || null,
             centro_custo_id: formData.centro_custo_id || null,
-            conta_id: formData.conta_id || null,
+            conta_bancaria_id: formData.conta_bancaria_id || null,
             status: formData.status,
             observacoes: formData.observacoes || null,
             updated_at: new Date().toISOString(),
@@ -447,7 +447,7 @@ export default function Transacoes() {
           tipo: formData.tipo,
           categoria_id: formData.categoria_id || null,
           centro_custo_id: formData.centro_custo_id || null,
-          conta_id: formData.conta_id || null,
+          conta_bancaria_id: formData.conta_bancaria_id || null,
           status: formData.status,
           conciliado: false,
           observacoes: formData.observacoes || null,
@@ -681,9 +681,9 @@ export default function Transacoes() {
                   <div className="space-y-2 col-span-2">
                     <Label htmlFor="conta">Conta Bancária</Label>
                     <Select
-                      value={formData.conta_id}
+                      value={formData.conta_bancaria_id}
                       onValueChange={(value) =>
-                        setFormData({ ...formData, conta_id: value })
+                        setFormData({ ...formData, conta_bancaria_id: value })
                       }
                     >
                       <SelectTrigger>
@@ -1194,7 +1194,7 @@ export default function Transacoes() {
                     const { data: existente } = await supabase
                       .from("transacoes")
                       .select("id")
-                      .eq("conta_id", contaBaixa)
+                      .eq("conta_bancaria_id", contaBaixa)
                       .eq("data_transacao", dataBaixa)
                       .eq("valor", item.valor)
                       .eq("descricao", item.descricao)
@@ -1219,7 +1219,7 @@ export default function Transacoes() {
                         valor: item.valor,
                         tipo: "despesa",
                         status: "pago",
-                        conta_id: contaBaixa,
+                        conta_bancaria_id: contaBaixa,
                         origem: "dda",
                       });
 
@@ -1238,7 +1238,7 @@ export default function Transacoes() {
                       .from("transacoes")
                       .update({
                         data_transacao: dataBaixa,
-                        conta_id: contaBaixa,
+                        conta_bancaria_id: contaBaixa,
                         status: "pago",
                       })
                       .eq("id", id);
@@ -1299,7 +1299,7 @@ export default function Transacoes() {
               ) : (
                 contas.map((conta) => {
                   const saldoSistema = transacoes
-                    .filter(t => t.conta_id === conta.id && t.status === 'pago')
+                    .filter(t => t.conta_bancaria_id === conta.id && t.status === 'pago')
                     .reduce((acc, t) => {
                       return acc + (t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor));
                     }, Number(conta.saldo_inicial || 0));

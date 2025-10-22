@@ -498,7 +498,7 @@ export type Database = {
           classificado_auto: boolean | null
           conciliado: boolean | null
           confianca_classificacao: number | null
-          conta_id: string | null
+          conta_bancaria_id: string | null
           contraparte_id: string | null
           created_at: string | null
           data_competencia: string | null
@@ -534,7 +534,7 @@ export type Database = {
           classificado_auto?: boolean | null
           conciliado?: boolean | null
           confianca_classificacao?: number | null
-          conta_id?: string | null
+          conta_bancaria_id?: string | null
           contraparte_id?: string | null
           created_at?: string | null
           data_competencia?: string | null
@@ -570,7 +570,7 @@ export type Database = {
           classificado_auto?: boolean | null
           conciliado?: boolean | null
           confianca_classificacao?: number | null
-          conta_id?: string | null
+          conta_bancaria_id?: string | null
           contraparte_id?: string | null
           created_at?: string | null
           data_competencia?: string | null
@@ -615,7 +615,7 @@ export type Database = {
           },
           {
             foreignKeyName: "transacoes_conta_id_fkey"
-            columns: ["conta_id"]
+            columns: ["conta_bancaria_id"]
             isOneToOne: false
             referencedRelation: "contas_bancarias"
             referencedColumns: ["id"]

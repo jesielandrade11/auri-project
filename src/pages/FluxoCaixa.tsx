@@ -291,7 +291,7 @@ const FluxoCaixa = () => {
       } else {
         const { data: transacoes } = await supabase
           .from("transacoes")
-          .select("*, categoria:categoria_id(nome, tipo, dre_grupo), centro_custo:centro_custo_id(nome), conta:conta_id(nome_banco)")
+          .select("*, categoria:categoria_id(nome, tipo, dre_grupo), centro_custo:centro_custo_id(nome), conta:conta_bancaria_id(nome_banco)")
           .eq("user_id", user.id)
           .gte("data_transacao", monthStart.toISOString())
           .lte("data_transacao", monthEnd.toISOString());

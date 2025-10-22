@@ -77,7 +77,7 @@ const NewDashboard = () => {
         .eq("conciliado", true);
 
       if (filters.contaIds.length > 0) {
-        query = query.in("conta_id", filters.contaIds);
+        query = query.in("conta_bancaria_id", filters.contaIds);
       }
 
       if (filters.categoriaIds.length > 0) {
