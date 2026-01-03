@@ -1,5 +1,5 @@
 -- Tabela de Contas Bancárias
-CREATE TABLE public.contas_bancarias (
+CREATE TABLE IF NOT EXISTS public.contas_bancarias (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   nome_banco VARCHAR(100) NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE public.contas_bancarias (
 );
 
 -- Tabela de Categorias (Plano de Contas)
-CREATE TABLE public.categorias (
+CREATE TABLE IF NOT EXISTS public.categorias (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   nome VARCHAR(100) NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE public.categorias (
 );
 
 -- Tabela de Centros de Custo
-CREATE TABLE public.centros_custo (
+CREATE TABLE IF NOT EXISTS public.centros_custo (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   codigo VARCHAR(20) NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE public.centros_custo (
 );
 
 -- Tabela de Transações
-CREATE TABLE public.transacoes (
+CREATE TABLE IF NOT EXISTS public.transacoes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   conta_id UUID REFERENCES public.contas_bancarias(id) ON DELETE SET NULL,
@@ -76,7 +76,7 @@ CREATE TABLE public.transacoes (
 );
 
 -- Tabela de Budgets
-CREATE TABLE public.budgets (
+CREATE TABLE IF NOT EXISTS public.budgets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   mes_referencia DATE NOT NULL,
@@ -91,27 +91,31 @@ CREATE TABLE public.budgets (
 );
 
 -- Índices para performance
-CREATE INDEX idx_transacoes_user_data ON public.transacoes(user_id, data_transacao DESC);
-CREATE INDEX idx_transacoes_categoria ON public.transacoes(categoria_id);
-CREATE INDEX idx_transacoes_conta ON public.transacoes(conta_id);
-CREATE INDEX idx_contas_user ON public.contas_bancarias(user_id);
-CREATE INDEX idx_categorias_user ON public.categorias(user_id);
+CREATE INDEX IF NOT EXISTS idx_transacoes_user_data ON public.transacoes(user_id, data_transacao DESC);
+CREATE INDEX IF NOT EXISTS idx_transacoes_categoria ON public.transacoes(categoria_id);
+CREATE INDEX IF NOT EXISTS idx_transacoes_conta ON public.transacoes(conta_id);
+CREATE INDEX IF NOT EXISTS idx_contas_user ON public.contas_bancarias(user_id);
+CREATE INDEX IF NOT EXISTS idx_categorias_user ON public.categorias(user_id);
 
 -- RLS Policies para Contas Bancárias
 ALTER TABLE public.contas_bancarias ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own contas" ON public.contas_bancarias;
 CREATE POLICY "Users can view their own contas"
 ON public.contas_bancarias FOR SELECT
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own contas" ON public.contas_bancarias;
 CREATE POLICY "Users can insert their own contas"
 ON public.contas_bancarias FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own contas" ON public.contas_bancarias;
 CREATE POLICY "Users can update their own contas"
 ON public.contas_bancarias FOR UPDATE
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own contas" ON public.contas_bancarias;
 CREATE POLICY "Users can delete their own contas"
 ON public.contas_bancarias FOR DELETE
 USING (auth.uid() = user_id);
@@ -119,18 +123,22 @@ USING (auth.uid() = user_id);
 -- RLS Policies para Categorias
 ALTER TABLE public.categorias ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own categorias" ON public.categorias;
 CREATE POLICY "Users can view their own categorias"
 ON public.categorias FOR SELECT
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own categorias" ON public.categorias;
 CREATE POLICY "Users can insert their own categorias"
 ON public.categorias FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own categorias" ON public.categorias;
 CREATE POLICY "Users can update their own categorias"
 ON public.categorias FOR UPDATE
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own categorias" ON public.categorias;
 CREATE POLICY "Users can delete their own categorias"
 ON public.categorias FOR DELETE
 USING (auth.uid() = user_id);
@@ -138,18 +146,22 @@ USING (auth.uid() = user_id);
 -- RLS Policies para Centros de Custo
 ALTER TABLE public.centros_custo ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own centros" ON public.centros_custo;
 CREATE POLICY "Users can view their own centros"
 ON public.centros_custo FOR SELECT
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own centros" ON public.centros_custo;
 CREATE POLICY "Users can insert their own centros"
 ON public.centros_custo FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own centros" ON public.centros_custo;
 CREATE POLICY "Users can update their own centros"
 ON public.centros_custo FOR UPDATE
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own centros" ON public.centros_custo;
 CREATE POLICY "Users can delete their own centros"
 ON public.centros_custo FOR DELETE
 USING (auth.uid() = user_id);
@@ -157,18 +169,22 @@ USING (auth.uid() = user_id);
 -- RLS Policies para Transações
 ALTER TABLE public.transacoes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own transacoes" ON public.transacoes;
 CREATE POLICY "Users can view their own transacoes"
 ON public.transacoes FOR SELECT
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own transacoes" ON public.transacoes;
 CREATE POLICY "Users can insert their own transacoes"
 ON public.transacoes FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own transacoes" ON public.transacoes;
 CREATE POLICY "Users can update their own transacoes"
 ON public.transacoes FOR UPDATE
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own transacoes" ON public.transacoes;
 CREATE POLICY "Users can delete their own transacoes"
 ON public.transacoes FOR DELETE
 USING (auth.uid() = user_id);
@@ -176,18 +192,22 @@ USING (auth.uid() = user_id);
 -- RLS Policies para Budgets
 ALTER TABLE public.budgets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own budgets" ON public.budgets;
 CREATE POLICY "Users can view their own budgets"
 ON public.budgets FOR SELECT
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own budgets" ON public.budgets;
 CREATE POLICY "Users can insert their own budgets"
 ON public.budgets FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own budgets" ON public.budgets;
 CREATE POLICY "Users can update their own budgets"
 ON public.budgets FOR UPDATE
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own budgets" ON public.budgets;
 CREATE POLICY "Users can delete their own budgets"
 ON public.budgets FOR DELETE
 USING (auth.uid() = user_id);
@@ -201,11 +221,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_contas_updated_at ON public.contas_bancarias;
 CREATE TRIGGER update_contas_updated_at
 BEFORE UPDATE ON public.contas_bancarias
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_transacoes_updated_at ON public.transacoes;
 CREATE TRIGGER update_transacoes_updated_at
 BEFORE UPDATE ON public.transacoes
 FOR EACH ROW

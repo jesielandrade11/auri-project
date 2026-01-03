@@ -59,7 +59,7 @@ export default function Planejamento() {
   const [open, setOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [selectedMonthDetails, setSelectedMonthDetails] = useState<{ month: number; type: 'receitas' | 'despesas' | 'saldo'; budgets: Budget[]; transacoes: Transacao[] }>({ month: 0, type: 'receitas', budgets: [], transacoes: [] });
+  const [selectedMonthDetails, setSelectedMonthDetails] = useState<{ month: number; type: 'entrada' | 'saída' | 'saldo'; budgets: Budget[]; transacoes: Transacao[] }>({ month: 0, type: 'entrada', budgets: [], transacoes: [] });
   const [anoFiltro, setAnoFiltro] = useState(new Date().getFullYear());
   const [formData, setFormData] = useState({
     mes_referencia: "",
@@ -102,7 +102,7 @@ export default function Planejamento() {
     queryFn: async () => {
       const startDate = `${anoFiltro}-01-01`;
       const endDate = `${anoFiltro}-12-31`;
-      
+
       const { data, error } = await supabase
         .from("budgets")
         .select(`
@@ -113,7 +113,7 @@ export default function Planejamento() {
         .gte("mes_referencia", startDate)
         .lte("mes_referencia", endDate)
         .order("mes_referencia", { ascending: true });
-      
+
       if (error) throw error;
       return data as Budget[];
     },
@@ -124,7 +124,7 @@ export default function Planejamento() {
     queryFn: async () => {
       const startDate = `${anoFiltro}-01-01`;
       const endDate = `${anoFiltro}-12-31`;
-      
+
       const { data, error } = await supabase
         .from("transacoes")
         .select(`
@@ -135,7 +135,7 @@ export default function Planejamento() {
         .gte("data_transacao", startDate)
         .lte("data_transacao", endDate)
         .order("data_transacao", { ascending: false });
-      
+
       if (error) throw error;
       return data as Transacao[];
     },
@@ -209,21 +209,21 @@ export default function Planejamento() {
 
   const budgetsByMonth = getBudgetsByMonth();
 
-  const handleOpenDetails = (monthIndex: number, type: 'receitas' | 'despesas' | 'saldo') => {
+  const handleOpenDetails = (monthIndex: number, type: 'entrada' | 'saída' | 'saldo') => {
     const budgetsMes = budgetsByMonth[monthIndex + 1];
-    const filteredBudgets = type === 'saldo' 
-      ? budgetsMes 
+    const filteredBudgets = type === 'saldo'
+      ? budgetsMes
       : budgetsMes.filter((b) => b.categoria?.tipo === type.slice(0, -1));
-    
+
     const transacoesMes = transacoes?.filter((t) => {
       const mesTransacao = new Date(t.data_transacao).getMonth() + 1;
       return mesTransacao === (monthIndex + 1);
     }) || [];
-    
+
     const filteredTransacoes = type === 'saldo'
       ? transacoesMes
       : transacoesMes.filter((t) => t.categoria?.tipo === type.slice(0, -1));
-    
+
     setSelectedMonthDetails({
       month: monthIndex + 1,
       type,
@@ -243,7 +243,7 @@ export default function Planejamento() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Planejamento Financeiro</h1>
-          <p className="text-muted-foreground">Planeje receitas e despesas por categoria e mês</p>
+          <p className="text-muted-foreground">Planeje entradas e saídas por categoria e mês</p>
         </div>
         <div className="flex gap-2">
           <Select value={anoFiltro.toString()} onValueChange={(v) => setAnoFiltro(parseInt(v))}>
@@ -434,7 +434,7 @@ export default function Planejamento() {
                   {meses.map((mes, index) => {
                     const budgetsMes = budgetsByMonth[index + 1];
                     const receitas = budgetsMes
-                      .filter((b) => b.categoria?.tipo === "receita")
+                      .filter((b) => b.categoria?.tipo === "entrada")
                       .reduce((acc, b) => acc + b.valor_planejado, 0);
                     const despesas = budgetsMes
                       .filter((b) => b.categoria?.tipo === "despesa")
@@ -447,7 +447,7 @@ export default function Planejamento() {
                     }) || [];
 
                     const receitasRealizadas = transacoesMes
-                      .filter((t) => t.tipo === "receita" && t.conciliado === true)
+                      .filter((t) => t.tipo === "entrada" && t.conciliado === true)
                       .reduce((acc, t) => acc + Number(t.valor), 0);
                     const despesasRealizadas = transacoesMes
                       .filter((t) => t.tipo === "despesa" && t.conciliado === true)
@@ -456,7 +456,7 @@ export default function Planejamento() {
 
                     const hoje = new Date();
                     const receitasAVencer = transacoesMes
-                      .filter((t) => t.tipo === "receita" && t.conciliado === false && new Date(t.data_transacao) >= hoje)
+                      .filter((t) => t.tipo === "entrada" && t.conciliado === false && new Date(t.data_transacao) >= hoje)
                       .reduce((acc, t) => acc + Number(t.valor), 0);
                     const despesasAVencer = transacoesMes
                       .filter((t) => t.tipo === "despesa" && t.conciliado === false && new Date(t.data_transacao) >= hoje)
@@ -468,9 +468,9 @@ export default function Planejamento() {
                     return (
                       <TableRow key={index}>
                         <TableCell className="sticky left-0 bg-background font-medium">{mes}</TableCell>
-                        <TableCell 
+                        <TableCell
                           className="text-green-600 cursor-pointer hover:bg-muted transition-colors"
-                          onClick={() => handleOpenDetails(index, 'receitas')}
+                          onClick={() => handleOpenDetails(index, 'entrada')}
                         >
                           <div className="flex items-center justify-between">
                             {new Intl.NumberFormat("pt-BR", {
@@ -480,9 +480,9 @@ export default function Planejamento() {
                             <Eye className="h-4 w-4 opacity-50" />
                           </div>
                         </TableCell>
-                        <TableCell 
+                        <TableCell
                           className="text-red-600 cursor-pointer hover:bg-muted transition-colors"
-                          onClick={() => handleOpenDetails(index, 'despesas')}
+                          onClick={() => handleOpenDetails(index, 'saída')}
                         >
                           <div className="flex items-center justify-between">
                             {new Intl.NumberFormat("pt-BR", {
@@ -492,7 +492,7 @@ export default function Planejamento() {
                             <Eye className="h-4 w-4 opacity-50" />
                           </div>
                         </TableCell>
-                        <TableCell 
+                        <TableCell
                           className={`${saldo >= 0 ? "text-green-600" : "text-red-600"} cursor-pointer hover:bg-muted transition-colors`}
                           onClick={() => handleOpenDetails(index, 'saldo')}
                         >
@@ -537,10 +537,10 @@ export default function Planejamento() {
         <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Detalhes - {meses[selectedMonthDetails.month - 1]} ({selectedMonthDetails.type === 'receitas' ? 'Receitas' : selectedMonthDetails.type === 'despesas' ? 'Despesas' : 'Todas'})
+              Detalhes - {meses[selectedMonthDetails.month - 1]} ({selectedMonthDetails.type === 'entrada' ? 'Entradas' : selectedMonthDetails.type === 'saída' ? 'Saídas' : 'Todas'})
             </DialogTitle>
           </DialogHeader>
-          
+
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
@@ -572,7 +572,7 @@ export default function Planejamento() {
                           </span>
                         </TableCell>
                         <TableCell>{budget.centro_custo?.nome || "-"}</TableCell>
-                        <TableCell className={budget.categoria?.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}>
+                        <TableCell className={budget.categoria?.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}>
                           {new Intl.NumberFormat("pt-BR", {
                             style: "currency",
                             currency: "BRL",
@@ -620,7 +620,7 @@ export default function Planejamento() {
                         </TableCell>
                         <TableCell>{transacao.categoria?.nome || "-"}</TableCell>
                         <TableCell>{transacao.centro_custo?.nome || "-"}</TableCell>
-                        <TableCell className={transacao.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}>
+                        <TableCell className={transacao.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}>
                           {new Intl.NumberFormat("pt-BR", {
                             style: "currency",
                             currency: "BRL",
@@ -636,7 +636,7 @@ export default function Planejamento() {
             <div className="border-t pt-4">
               <div className="flex justify-between font-semibold">
                 <span>Total Planejado:</span>
-                <span className={selectedMonthDetails.type === 'receitas' ? 'text-green-600' : 'text-red-600'}>
+                <span className={selectedMonthDetails.type === 'entrada' ? 'text-green-600' : 'text-red-600'}>
                   {new Intl.NumberFormat("pt-BR", {
                     style: "currency",
                     currency: "BRL",
@@ -647,7 +647,7 @@ export default function Planejamento() {
               </div>
               <div className="flex justify-between font-semibold mt-2">
                 <span>Total Realizado:</span>
-                <span className={selectedMonthDetails.type === 'receitas' ? 'text-green-600' : 'text-red-600'}>
+                <span className={selectedMonthDetails.type === 'entrada' ? 'text-green-600' : 'text-red-600'}>
                   {new Intl.NumberFormat("pt-BR", {
                     style: "currency",
                     currency: "BRL",

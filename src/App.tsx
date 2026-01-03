@@ -20,6 +20,10 @@ import FluxoCaixaReport from "./pages/reports/FluxoCaixa";
 import DRECentroCusto from "./pages/reports/DRECentroCusto";
 import Aging from "./pages/reports/Aging";
 import Importacao from "./pages/Importacao";
+import RelatorioCascata from "./pages/RelatorioCascata";
+import Configuracoes from "./pages/Configuracoes";
+import PluggyAuth from "./pages/PluggyAuth";
+import CartaoCredito from "./pages/CartaoCredito";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +45,7 @@ const App = () => (
           >
             <Route index element={<NewDashboard />} />
             <Route path="contas" element={<Contas />} />
+            <Route path="cartoes" element={<CartaoCredito />} />
             <Route path="transacoes" element={<Transacoes />} />
             <Route path="categorizacao" element={<Categorizacao />} />
             <Route path="categorias" element={<Categorias />} />
@@ -51,8 +56,10 @@ const App = () => (
             <Route path="relatorios/fluxo-caixa" element={<FluxoCaixaReport />} />
             <Route path="relatorios/dre" element={<DRECentroCusto />} />
             <Route path="relatorios/aging" element={<Aging />} />
+            <Route path="relatorios/cascata" element={<RelatorioCascata />} />
             <Route path="importacao" element={<Importacao />} />
-            <Route path="configuracoes" element={<div className="p-8">Configurações em desenvolvimento</div>} />
+            <Route path="configuracoes" element={<Configuracoes />} />
+
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

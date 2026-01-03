@@ -1,6 +1,6 @@
 -- Adicionar coluna centro_custo_id na tabela categorias
 ALTER TABLE public.categorias 
-ADD COLUMN centro_custo_id uuid REFERENCES public.centros_custo(id) ON DELETE RESTRICT;
+ADD COLUMN IF NOT EXISTS centro_custo_id uuid REFERENCES public.centros_custo(id) ON DELETE RESTRICT;
 
 -- Atualizar categorias existentes para ter um centro de custo padrão
 -- Primeiro, vamos criar um centro de custo "Geral" para cada usuário que tenha categorias
@@ -28,7 +28,7 @@ ALTER TABLE public.categorias
 ALTER COLUMN centro_custo_id SET NOT NULL;
 
 -- Criar índice para melhor performance nas consultas
-CREATE INDEX idx_categorias_centro_custo ON public.categorias(centro_custo_id);
+CREATE INDEX IF NOT EXISTS idx_categorias_centro_custo ON public.categorias(centro_custo_id);
 
 -- Adicionar comentário para documentação
 COMMENT ON COLUMN public.categorias.centro_custo_id IS 'Centro de custo ao qual a categoria pertence (obrigatório)';

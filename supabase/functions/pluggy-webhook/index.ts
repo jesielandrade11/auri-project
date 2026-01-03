@@ -1,221 +1,277 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
-import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-pluggy-signature',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Verify Pluggy webhook signature
-function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
-  const hmac = createHmac('sha256', secret);
-  hmac.update(payload);
-  const expectedSignature = hmac.digest('hex');
-  return signature === expectedSignature;
-}
-
-// Validate webhook event structure
-function validateEventStructure(event: any): boolean {
-  if (!event || typeof event !== 'object') return false;
-  if (!event.event || typeof event.event !== 'string') return false;
-  if (!event.data || typeof event.data !== 'object') return false;
-  
-  const allowedEvents = ['item/created', 'item/updated', 'item/deleted', 'item/error'];
-  if (!allowedEvents.includes(event.event)) return false;
-  
-  return true;
-}
-
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const PLUGGY_CLIENT_ID = Deno.env.get('PLUGGY_CLIENT_ID');
-    const PLUGGY_CLIENT_SECRET = Deno.env.get('PLUGGY_CLIENT_SECRET');
-    const PLUGGY_WEBHOOK_SECRET = Deno.env.get('PLUGGY_WEBHOOK_SECRET');
-
-    console.log('📥 Pluggy webhook triggered');
-    console.log('Credentials present:', !!PLUGGY_CLIENT_ID, !!PLUGGY_CLIENT_SECRET, 'Webhook secret:', !!PLUGGY_WEBHOOK_SECRET);
-
-    // Get raw request body for signature verification
-    const rawBody = await req.text();
-    const signature = req.headers.get('x-pluggy-signature');
-
-    // Verify webhook signature if secret is configured
-    if (PLUGGY_WEBHOOK_SECRET) {
-      if (!signature) {
-        console.error('❌ Missing webhook signature');
-        return new Response(JSON.stringify({ error: 'Missing signature' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      if (!verifyWebhookSignature(rawBody, signature, PLUGGY_WEBHOOK_SECRET)) {
-        console.error('❌ Invalid webhook signature');
-        return new Response(JSON.stringify({ error: 'Invalid signature' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      console.log('✅ Webhook signature verified');
-    } else {
-      console.warn('⚠️ PLUGGY_WEBHOOK_SECRET not configured - signature verification skipped');
+    if (req.method === 'OPTIONS') {
+        return new Response('ok', { headers: corsHeaders });
     }
 
-    const event = JSON.parse(rawBody);
-    
-    // Validate event structure
-    if (!validateEventStructure(event)) {
-      console.error('❌ Invalid webhook event structure');
-      return new Response(JSON.stringify({ error: 'Invalid event structure' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    try {
+        const payload = await req.json();
+        console.log('Webhook received:', payload);
 
-    console.log('📦 Webhook event received:', JSON.stringify(event, null, 2));
+        const { event, itemId } = payload;
 
-    console.log('🔐 Authenticating with Pluggy for webhook processing...');
+        if (!event || !itemId) {
+            throw new Error('Invalid webhook payload');
+        }
 
-    // Get API key
-    const authResponse = await fetch('https://api.pluggy.ai/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clientId: PLUGGY_CLIENT_ID,
-        clientSecret: PLUGGY_CLIENT_SECRET,
-      }),
-    });
+        // Only process relevant events
+        if (event !== 'TRANSACTIONS_CREATED' && event !== 'ITEM_UPDATED') {
+            console.log(`Ignoring event: ${event}`);
+            return new Response(JSON.stringify({ message: 'Event ignored' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+            });
+        }
 
-    if (!authResponse.ok) {
-      const errorText = await authResponse.text();
-      console.error('❌ Auth failed in webhook:', authResponse.status, errorText);
-      throw new Error(`Authentication failed: ${errorText}`);
-    }
+        // Initialize Supabase Admin Client (to bypass RLS and find user)
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { apiKey } = await authResponse.json();
-    console.log('✅ Webhook authenticated with Pluggy');
+        // Find the user associated with this Item ID
+        const { data: account, error: accountError } = await supabase
+            .from('contas_bancarias')
+            .select('user_id')
+            .eq('pluggy_item_id', itemId)
+            .limit(1)
+            .single();
 
-    // Handle different event types
-    if (event.event === 'item/created' || event.event === 'item/updated') {
-      const itemId = event.data.id;
-      console.log(`🏦 Processing ${event.event} for item ${itemId}`);
-      
-      // Fetch accounts for this item
-      const accountsResponse = await fetch(`https://api.pluggy.ai/accounts?itemId=${itemId}`, {
-        headers: { 'X-API-KEY': apiKey },
-      });
-      
-      if (!accountsResponse.ok) {
-        const errorText = await accountsResponse.text();
-        console.error('❌ Failed to fetch accounts:', errorText);
-        throw new Error(`Failed to fetch accounts: ${errorText}`);
-      }
-      
-      const { results: accounts } = await accountsResponse.json();
-      console.log(`✅ Found ${accounts.length} accounts for item ${itemId}`);
+        if (accountError || !account) {
+            console.error('Account not found for item:', itemId);
+            return new Response(JSON.stringify({ error: 'Account not found' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 404,
+            });
+        }
 
-      // Fetch transactions
-      if (accounts.length > 0) {
-        const accountId = accounts[0].id;
-        console.log(`💳 Fetching transactions for account ${accountId}`);
-        
-        const transactionsResponse = await fetch(`https://api.pluggy.ai/transactions?accountId=${accountId}`, {
-          headers: { 'X-API-KEY': apiKey },
+        const userId = account.user_id;
+        console.log(`Found user ${userId} for item ${itemId}`);
+
+        // --- SYNC LOGIC (Duplicated from sync-transactions for independence) ---
+
+        // Get Pluggy credentials
+        const pluggyClientId = Deno.env.get('PLUGGY_CLIENT_ID');
+        const pluggyClientSecret = Deno.env.get('PLUGGY_CLIENT_SECRET');
+
+        if (!pluggyClientId || !pluggyClientSecret) {
+            throw new Error('Pluggy credentials not configured');
+        }
+
+        // Authenticate with Pluggy
+        const authResponse = await fetch('https://api.pluggy.ai/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                clientId: pluggyClientId,
+                clientSecret: pluggyClientSecret,
+            }),
         });
+
+        if (!authResponse.ok) {
+            throw new Error('Pluggy authentication failed');
+        }
+
+        const { apiKey } = await authResponse.json();
+
+        // Fetch and update accounts (Update Balance)
+        const accountsResponse = await fetch(
+            `https://api.pluggy.ai/accounts?itemId=${itemId}`,
+            {
+                headers: { 'X-API-KEY': apiKey },
+            }
+        );
+
+        if (accountsResponse.ok) {
+            const { results: accounts } = await accountsResponse.json();
+            for (const account of accounts) {
+                const { error: updateError } = await supabase
+                    .from('contas_bancarias')
+                    .update({
+                        saldo_atual: account.balance,
+                        ultima_sincronizacao: new Date().toISOString(),
+                        ...(account.creditData?.balanceCloseDate && {
+                            closing_day: new Date(account.creditData.balanceCloseDate).getUTCDate()
+                        }),
+                        ...(account.creditData?.balanceDueDate && {
+                            due_day: new Date(account.creditData.balanceDueDate).getUTCDate()
+                        })
+                    })
+                    .eq('pluggy_account_id', account.id);
+
+                if (updateError) console.error(`Error updating account ${account.id}:`, updateError);
+            }
+        }
+
+        // Fetch transactions
+        const transactionsResponse = await fetch(
+            `https://api.pluggy.ai/transactions?itemId=${itemId}`,
+            {
+                headers: { 'X-API-KEY': apiKey },
+            }
+        );
 
         if (!transactionsResponse.ok) {
-          const errorText = await transactionsResponse.text();
-          console.error('❌ Failed to fetch transactions:', errorText);
-          throw new Error(`Failed to fetch transactions: ${errorText}`);
+            throw new Error('Failed to fetch transactions');
         }
 
         const { results: transactions } = await transactionsResponse.json();
-        console.log(`✅ Found ${transactions.length} transactions`);
+        console.log(`Fetched ${transactions.length} transactions`);
 
-        // Find the conta_bancaria linked to this Pluggy item
-        console.log(`🔍 Looking for account with pluggy_item_id: ${itemId}`);
-        
-        const { data: conta, error: contaError } = await supabase
-          .from('contas_bancarias')
-          .select('*')
-          .eq('pluggy_item_id', itemId)
-          .single();
+        const duplicates: string[] = [];
+        const inserted: string[] = [];
 
-        if (contaError) {
-          console.error('❌ Error finding account:', contaError);
-        }
+        // Create a map of Pluggy Account ID -> Supabase Account ID
+        const accountMap = new Map<string, string>();
 
-        if (conta) {
-          console.log(`✅ Found account in database: ${conta.id}`);
-          
-          // Import transactions
-          let imported = 0;
-          for (const tx of transactions) {
-            const { error } = await supabase.from('transacoes').insert({
-              user_id: conta.user_id,
-              conta_id: conta.id,
-              descricao: tx.description,
-              descricao_original: tx.description,
-              valor: Math.abs(tx.amount),
-              tipo: tx.amount >= 0 ? 'receita' : 'despesa',
-              data_transacao: tx.date,
-              data_competencia: tx.date,
-              status: 'pago',
-              origem: 'pluggy',
-              arquivo_origem: `pluggy_item_${itemId}`,
-            });
+        // Get all unique account IDs from transactions
+        const pluggyAccountIds = [...new Set(transactions.map((t: any) => t.accountId))];
 
-            if (error) {
-              console.error('❌ Error inserting transaction:', error);
-            } else {
-              imported++;
+        if (pluggyAccountIds.length > 0) {
+            const { data: accounts } = await supabase
+                .from('contas_bancarias')
+                .select('id, pluggy_account_id')
+                .in('pluggy_account_id', pluggyAccountIds);
+
+            if (accounts) {
+                accounts.forEach((acc: any) => {
+                    if (acc.pluggy_account_id) {
+                        accountMap.set(acc.pluggy_account_id, acc.id);
+                    }
+                });
             }
-          }
-
-          console.log(`✅ Imported ${imported}/${transactions.length} transactions`);
-
-          // Update account balance
-          const { error: updateError } = await supabase
-            .from('contas_bancarias')
-            .update({ 
-              saldo_atual: accounts[0]?.balance,
-              ultima_sincronizacao: new Date().toISOString(),
-            })
-            .eq('id', conta.id);
-
-          if (updateError) {
-            console.error('❌ Error updating account:', updateError);
-          } else {
-            console.log(`✅ Updated account ${conta.id} balance and sync time`);
-          }
-        } else {
-          console.warn(`⚠️ No account found in database for item ${itemId}`);
         }
-      } else {
-        console.log('⚠️ No accounts found from Pluggy for this item');
-      }
-    } else {
-      console.log(`ℹ️ Ignoring event type: ${event.event}`);
-    }
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Error in pluggy-webhook function:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+        for (const transaction of transactions) {
+            const pluggyId = transaction.id;
+
+            // Check duplicate
+            const { data: existing } = await supabase
+                .from('transacoes')
+                .select('id')
+                .eq('pluggy_transaction_id', pluggyId)
+                .single();
+
+            if (existing) {
+                duplicates.push(pluggyId);
+                continue;
+            }
+
+            // Determine status and conciliation
+            const isPosted = transaction.status === 'POSTED';
+            const status = isPosted ? 'pago' : 'pendente';
+            const conciliado = isPosted;
+
+            // Determine contraparte name
+            let contraparteName = transaction.description;
+            if (transaction.merchant?.businessName) {
+                contraparteName = transaction.merchant.businessName;
+            } else if (transaction.merchant?.name) {
+                contraparteName = transaction.merchant.name;
+            } else if (transaction.paymentData?.receiver?.name) {
+                contraparteName = transaction.paymentData.receiver.name;
+            } else if (transaction.paymentData?.payer?.name) {
+                contraparteName = transaction.paymentData.payer.name;
+            }
+
+            // Upsert contraparte and get ID
+            let contraparteId = null;
+            if (contraparteName) {
+                const cleanName = contraparteName.trim();
+
+                if (cleanName) {
+                    // Check if exists
+                    const { data: existingContraparte } = await supabase
+                        .from('contrapartes')
+                        .select('id')
+                        .eq('user_id', userId)
+                        .ilike('nome', cleanName)
+                        .maybeSingle();
+
+                    if (existingContraparte) {
+                        contraparteId = existingContraparte.id;
+                    } else {
+                        // Create new
+                        const role = transaction.amount >= 0 ? 'cliente' : 'fornecedor';
+                        const { data: newContraparte, error: createError } = await supabase
+                            .from('contrapartes')
+                            .insert({
+                                user_id: userId,
+                                nome: cleanName,
+                                papel: role,
+                                ativo: true
+                            })
+                            .select('id')
+                            .single();
+
+                        if (!createError && newContraparte) {
+                            contraparteId = newContraparte.id;
+                        } else if (createError) {
+                            console.error(`Error creating contraparte ${cleanName}:`, createError);
+                        }
+                    }
+                }
+            }
+
+            // Get internal account ID
+            const internalAccountId = transaction.accountId ? accountMap.get(transaction.accountId) : null;
+
+            // Insert
+            const { error: insertError } = await supabase
+                .from('transacoes')
+                .insert({
+                    user_id: userId,
+                    pluggy_transaction_id: pluggyId,
+                    data_transacao: transaction.date,
+                    descricao: transaction.description,
+                    valor: Math.abs(transaction.amount),
+                    tipo: transaction.amount >= 0 ? 'receita' : 'despesa',
+                    // contraparte: contraparte, // Removed as column doesn't exist
+                    contraparte_id: contraparteId, // Linked to contrapartes table
+                    status: status,
+                    data_baixa: isPosted ? transaction.date : null,
+                    conciliado: conciliado,
+                    origem: 'api',
+                    conta_bancaria_id: internalAccountId, // Use mapped ID
+                    categoria_id: null, // We don't have category mapping yet, keeping null
+                });
+
+            if (insertError) {
+                console.error(`Error inserting transaction ${pluggyId}:`, insertError);
+            } else {
+                inserted.push(pluggyId);
+            }
+        }
+
+        return new Response(
+            JSON.stringify({
+                message: 'Webhook processed',
+                summary: {
+                    total: transactions.length,
+                    inserted: inserted.length,
+                    duplicates: duplicates.length,
+                },
+            }),
+            {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+            }
+        );
+
+    } catch (error) {
+        console.error('Webhook error:', error);
+        return new Response(
+            JSON.stringify({ error: error.message }),
+            {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 400,
+            }
+        );
+    }
 });

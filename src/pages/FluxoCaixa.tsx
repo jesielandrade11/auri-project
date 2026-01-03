@@ -168,10 +168,10 @@ const FluxoCaixa = () => {
         monthData.liquidoJuros = monthData.jurosRecebidos - monthData.jurosPagos;
         monthData.liquidoTransferencia = monthData.entradaTransferencia - monthData.saidaTransferencia;
         monthData.liquidoMovimentacao = monthData.recebimentosNaoOp - monthData.gastosPessoais;
-        
-        monthData.saldoFinal = monthData.saldoInicial + monthData.lucroOperacional + 
-          monthData.liquidoInvestimentos + monthData.liquidoFinanciamentos + 
-          monthData.liquidoJuros - monthData.distribuicaoLucro + 
+
+        monthData.saldoFinal = monthData.saldoInicial + monthData.lucroOperacional +
+          monthData.liquidoInvestimentos + monthData.liquidoFinanciamentos +
+          monthData.liquidoJuros - monthData.distribuicaoLucro +
           monthData.liquidoTransferencia + monthData.liquidoMovimentacao;
 
         saldoAcumulado = monthData.saldoFinal;
@@ -210,7 +210,7 @@ const FluxoCaixa = () => {
         const dreGrupo = categoria?.dre_grupo;
         const tipo = categoria?.tipo;
 
-        if (tipo === "receita") {
+        if (tipo === "entrada") {
           if (dreGrupo === "receita_bruta") {
             monthData.vendasOperacao += valor;
           } else if (dreGrupo === "financeiro") {
@@ -238,7 +238,7 @@ const FluxoCaixa = () => {
         const dreGrupo = categoria?.dre_grupo;
         const tipo = categoria?.tipo;
 
-        if (tipo === "receita") {
+        if (tipo === "entrada") {
           if (dreGrupo === "receita_bruta") {
             monthData.vendasOperacao += valor;
           } else if (dreGrupo === "financeiro") {
@@ -273,7 +273,7 @@ const FluxoCaixa = () => {
 
       const monthStart = startOfMonth(month);
       const monthEnd = endOfMonth(month);
-      
+
       let items: any[] = [];
       let title = '';
 
@@ -285,7 +285,7 @@ const FluxoCaixa = () => {
           .eq("user_id", user.id)
           .gte("mes_referencia", monthStart.toISOString())
           .lte("mes_referencia", monthEnd.toISOString());
-        
+
         items = budgets || [];
         title = 'Planejamentos';
       } else {
@@ -295,7 +295,7 @@ const FluxoCaixa = () => {
           .eq("user_id", user.id)
           .gte("data_transacao", monthStart.toISOString())
           .lte("data_transacao", monthEnd.toISOString());
-        
+
         items = transacoes || [];
         title = 'Transações';
       }
@@ -349,15 +349,15 @@ const FluxoCaixa = () => {
 
   const renderDetailRow = (title: string, getValue: (month: MonthData) => number, isVisible: boolean) => {
     if (!isVisible) return null;
-    
+
     return (
       <TableRow>
         <TableCell className="pl-12 sticky left-0 z-10 bg-background">{title}</TableCell>
         {monthsData.map((month, idx) => {
           const value = getValue(month);
           return (
-            <TableCell 
-              key={idx} 
+            <TableCell
+              key={idx}
               className={`text-right ${value !== 0 ? 'cursor-pointer hover:bg-muted transition-colors' : ''}`}
               onClick={() => value !== 0 && handleShowDetails(month.date, title)}
             >
@@ -567,11 +567,11 @@ const FluxoCaixa = () => {
                 selectedDetails.items.map((item, idx) => (
                   <TableRow key={idx}>
                     <TableCell>
-                      {item.data_transacao 
+                      {item.data_transacao
                         ? format(new Date(item.data_transacao), "dd/MM/yyyy")
                         : item.mes_referencia
-                        ? format(new Date(item.mes_referencia), "MM/yyyy")
-                        : "-"
+                          ? format(new Date(item.mes_referencia), "MM/yyyy")
+                          : "-"
                       }
                     </TableCell>
                     <TableCell>
@@ -585,7 +585,7 @@ const FluxoCaixa = () => {
                     </TableCell>
                     <TableCell>{item.centro_custo?.nome || "-"}</TableCell>
                     <TableCell>{item.conta?.nome_banco || "-"}</TableCell>
-                    <TableCell className={`text-right ${item.categoria?.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}`}>
+                    <TableCell className={`text-right ${item.categoria?.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}`}>
                       {new Intl.NumberFormat("pt-BR", {
                         style: "currency",
                         currency: "BRL",

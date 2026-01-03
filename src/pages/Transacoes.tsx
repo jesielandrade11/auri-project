@@ -12,16 +12,52 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Filter, CheckCircle2, XCircle, DollarSign, Calendar, Receipt, Upload } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  Pencil,
+  Trash2,
+  TrendingUp,
+  TrendingDown,
+  Filter,
+  CheckCircle2,
+  Search,
+  Upload,
+  User,
+  X,
+  XCircle,
+  DollarSign,
+  Calendar,
+  Receipt,
+  Check,
+  ChevronsUpDown
+} from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tables } from "@/integrations/supabase/types";
+import BaixaDialog from "@/components/transactions/BaixaDialog";
+import { DuplicateTransactionsPanel } from "@/components/transactions/DuplicateTransactionsPanel";
+import { cn } from "@/lib/utils";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 type Transacao = Tables<"transacoes">;
 type Categoria = Tables<"categorias">;
 type CentroCusto = Tables<"centros_custo">;
 type ContaBancaria = Tables<"contas_bancarias">;
 type DDABoleto = Tables<"dda_boletos">;
+type Contraparte = Tables<"contrapartes">;
 
 interface TransacaoComDados extends Transacao {
   categoria?: {
@@ -35,6 +71,9 @@ interface TransacaoComDados extends Transacao {
   } | null;
   conta?: {
     nome_banco: string;
+  } | null;
+  contraparte?: {
+    nome: string;
   } | null;
 }
 
@@ -65,6 +104,7 @@ export default function Transacoes() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([]);
   const [contas, setContas] = useState<ContaBancaria[]>([]);
+  const [listaContrapartes, setListaContrapartes] = useState<Contraparte[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [baixaDialogOpen, setBaixaDialogOpen] = useState(false);
   const [controleSaldoOpen, setControleSaldoOpen] = useState(false);
@@ -87,6 +127,11 @@ export default function Transacoes() {
   const [todosMarConciliacao, setTodosMarConciliacao] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [filtroConta, setFiltroConta] = useState("todos");
+  const [duplicatas, setDuplicatas] = useState<TransacaoComDados[]>([]);
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [tipoFiltro, setTipoFiltro] = useState<'todas' | 'entrada' | 'saída'>('todas');
+  const [comboboxOpen, setComboboxOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     data_transacao: new Date().toISOString().split("T")[0],
@@ -96,13 +141,15 @@ export default function Transacoes() {
     categoria_id: "",
     centro_custo_id: "",
     conta_bancaria_id: "",
-    status: "agendado",
+    contraparte_id: "",
+    data_vencimento: "",
+    data_agendamento: "",
     observacoes: "",
   });
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [pageSize, tipoFiltro]);
 
   const loadData = async () => {
     try {
@@ -113,18 +160,29 @@ export default function Transacoes() {
       const hoje = new Date().toISOString().split("T")[0];
 
       // Buscar transações pagas (histórico)
-      const { data: transacoesPagas, error: transacoesPagasError } = await supabase
+      let query = supabase
         .from("transacoes")
         .select(`
           *,
           categoria:categoria_id(nome, icone, cor),
           centro_custo:centro_custo_id(nome, codigo),
-          conta:conta_bancaria_id(nome_banco)
+          conta:conta_bancaria_id(nome_banco),
+          contraparte:contrapartes(nome)
         `)
         .eq("user_id", user.id)
-        .eq("status", "pago")
+        .eq("status", "pago");
+
+      // Apply type filter if not 'todas'
+      if (tipoFiltro !== 'todas') {
+        query = query.eq("tipo", tipoFiltro);
+      }
+
+      // Apply pagination and ordering
+      query = query
         .order("data_transacao", { ascending: false })
-        .limit(100);
+        .limit(pageSize);
+
+      const { data: transacoesPagas, error: transacoesPagasError } = await query;
 
       if (transacoesPagasError) throw transacoesPagasError;
 
@@ -135,7 +193,8 @@ export default function Transacoes() {
           *,
           categoria:categoria_id(nome, icone, cor),
           centro_custo:centro_custo_id(nome, codigo),
-          conta:conta_bancaria_id(nome_banco)
+          conta:conta_bancaria_id(nome_banco),
+          contraparte:contrapartes(nome)
         `)
         .eq("user_id", user.id)
         .in("status", ["pendente", "agendado"])
@@ -187,6 +246,16 @@ export default function Transacoes() {
 
       if (contasError) throw contasError;
 
+      // Buscar contrapartes
+      const { data: contrapartesData, error: contrapartesError } = await supabase
+        .from("contrapartes")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("ativo", true)
+        .order("nome");
+
+      if (contrapartesError) throw contrapartesError;
+
       // Montar lista de transações a vencer
       const aVencer: TransacaoAVencer[] = [];
 
@@ -225,12 +294,30 @@ export default function Transacoes() {
       // Ordenar por data de vencimento
       aVencer.sort((a, b) => new Date(a.data_vencimento).getTime() - new Date(b.data_vencimento).getTime());
 
+      // Buscar possíveis duplicatas
+      const { data: duplicatasData, error: duplicatasError } = await supabase
+        .from("transacoes")
+        .select(`
+          *,
+          categoria:categoria_id(nome, icone,cor),
+          centro_custo:centro_custo_id(nome, codigo),
+          conta:conta_bancaria_id(nome_banco),
+          contraparte:contrapartes(nome)
+        `)
+        .eq("user_id", user.id)
+        .eq("possivel_duplicata", true)
+        .order("data_transacao", { ascending: false });
+
+      if (duplicatasError) console.error("Error loading duplicates:", duplicatasError);
+
       setTransacoes(transacoesPagas || []);
       setTransacoesAVencer(aVencer);
       setDDABoletos(ddaData || []);
       setCategorias(categoriasData || []);
       setCentrosCusto(centrosData || []);
       setContas(contasData || []);
+      setListaContrapartes(contrapartesData || []);
+      setDuplicatas(duplicatasData || []);
     } catch (error: any) {
       toast({
         title: "Erro ao carregar dados",
@@ -251,7 +338,9 @@ export default function Transacoes() {
       categoria_id: "",
       centro_custo_id: "",
       conta_bancaria_id: "",
-      status: "agendado",
+      contraparte_id: "",
+      data_vencimento: "",
+      data_agendamento: "",
       observacoes: "",
     });
     setEditando(null);
@@ -266,11 +355,11 @@ export default function Transacoes() {
       });
       return;
     }
-    
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
-      
+
       const { data, error } = await supabase
         .from("transacoes")
         .select(`
@@ -286,9 +375,9 @@ export default function Transacoes() {
         .gte("data_transacao", dataInicialConciliacao)
         .lte("data_transacao", dataFinalConciliacao)
         .order("data_transacao", { ascending: true });
-      
+
       if (error) throw error;
-      
+
       setTransacoesConciliacao(data || []);
       setSelecionadosConciliacao([]);
       setTodosMarConciliacao(false);
@@ -318,13 +407,13 @@ export default function Transacoes() {
 
   const handleConciliarSelecionados = async () => {
     if (selecionadosConciliacao.length === 0) return;
-    
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
-      
+
       const agora = new Date().toISOString();
-      
+
       const { error } = await supabase
         .from("transacoes")
         .update({
@@ -335,14 +424,14 @@ export default function Transacoes() {
           updated_at: agora,
         })
         .in("id", selecionadosConciliacao);
-      
+
       if (error) throw error;
-      
+
       toast({
         title: "Conciliação realizada",
         description: `${selecionadosConciliacao.length} transação(ões) conciliada(s) com sucesso`,
       });
-      
+
       buscarTransacoesConciliacao();
       loadData();
     } catch (error: any) {
@@ -368,7 +457,9 @@ export default function Transacoes() {
         categoria_id: transacao.categoria_id || "",
         centro_custo_id: transacao.centro_custo_id || "",
         conta_bancaria_id: transacao.conta_bancaria_id || "",
-        status: transacao.status || "agendado",
+        contraparte_id: transacao.contraparte_id || "",
+        data_vencimento: (transacao as any).data_vencimento || "",
+        data_agendamento: (transacao as any).data_agendamento || "",
         observacoes: transacao.observacoes || "",
       });
       setDialogOpen(true);
@@ -386,7 +477,9 @@ export default function Transacoes() {
         categoria_id: transacaoEditada.categoria_id || "",
         centro_custo_id: transacaoEditada.centro_custo_id || "",
         conta_bancaria_id: transacaoEditada.conta_bancaria_id || "",
-        status: transacaoEditada.status || "agendado",
+        contraparte_id: transacaoEditada.contraparte_id || "",
+        data_vencimento: (transacaoEditada as any).data_vencimento || "",
+        data_agendamento: (transacaoEditada as any).data_agendamento || "",
         observacoes: transacaoEditada.observacoes || "",
       });
       setDialogOpen(true);
@@ -407,15 +500,6 @@ export default function Transacoes() {
         throw new Error("Valor inválido");
       }
 
-      if (formData.status === 'pago') {
-        toast({
-          title: "Atenção",
-          description: "Transações devem ser conciliadas antes de marcar como 'pago'. Use status 'agendado' ou realize a conciliação.",
-          variant: "destructive",
-        });
-        return;
-      }
-
       if (editando) {
         const { error } = await supabase
           .from("transacoes")
@@ -427,7 +511,9 @@ export default function Transacoes() {
             categoria_id: formData.categoria_id || null,
             centro_custo_id: formData.centro_custo_id || null,
             conta_bancaria_id: formData.conta_bancaria_id || null,
-            status: formData.status,
+            contraparte_id: formData.contraparte_id || null,
+            data_vencimento: formData.data_vencimento || null,
+            data_agendamento: formData.data_agendamento || null,
             observacoes: formData.observacoes || null,
             updated_at: new Date().toISOString(),
           })
@@ -449,7 +535,10 @@ export default function Transacoes() {
           categoria_id: formData.categoria_id || null,
           centro_custo_id: formData.centro_custo_id || null,
           conta_bancaria_id: formData.conta_bancaria_id || null,
-          status: formData.status,
+          contraparte_id: formData.contraparte_id || null,
+          data_vencimento: formData.data_vencimento || null,
+          data_agendamento: formData.data_agendamento || null,
+          status: "pendente",
           conciliado: false,
           observacoes: formData.observacoes || null,
           origem: "manual",
@@ -532,10 +621,10 @@ export default function Transacoes() {
 
     try {
       // Separar transações e DDAs
-      const transacoesIds = selecionados.filter(id => 
+      const transacoesIds = selecionados.filter(id =>
         transacoesAVencer.find(t => t.id === id && t.tipo === 'transacao')
       );
-      const ddasIds = selecionados.filter(id => 
+      const ddasIds = selecionados.filter(id =>
         transacoesAVencer.find(t => t.id === id && t.tipo === 'dda')
       );
 
@@ -576,12 +665,12 @@ export default function Transacoes() {
   };
 
   const totalReceitas = transacoes
-    .filter((t) => t.tipo === "receita")
-    .reduce((sum, t) => sum + Number(t.valor), 0);
+    .filter((t) => t.tipo === "receita" || t.tipo === "entrada")
+    .reduce((sum, t) => sum + Math.abs(Number(t.valor)), 0);
 
   const totalDespesas = transacoes
-    .filter((t) => t.tipo === "despesa")
-    .reduce((sum, t) => sum + Number(t.valor), 0);
+    .filter((t) => t.tipo === "despesa" || t.tipo === "saída")
+    .reduce((sum, t) => sum + Math.abs(Number(t.valor)), 0);
 
   if (loading) {
     return (
@@ -688,28 +777,78 @@ export default function Transacoes() {
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="status">Status *</Label>
-                    <Select
-                      value={formData.status}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, status: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pago" disabled>
-                          Pago (usar conciliação)
-                        </SelectItem>
-                        <SelectItem value="pendente">Pendente</SelectItem>
-                        <SelectItem value="agendado">Agendado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Use "Agendado" para transações pagas aguardando conciliação
+                  <div className="space-y-2 flex flex-col">
+                    <Label htmlFor="contraparte" className="mb-2">Contraparte</Label>
+                    <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={comboboxOpen}
+                          className="w-full justify-between"
+                        >
+                          {formData.contraparte_id
+                            ? listaContrapartes.find((c) => c.id === formData.contraparte_id)?.nome
+                            : "Selecione..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0">
+                        <Command>
+                          <CommandInput placeholder="Buscar contato..." />
+                          <CommandList>
+                            <CommandEmpty>Nenhum contato encontrado.</CommandEmpty>
+                            <CommandGroup>
+                              {listaContrapartes.map((contraparte) => (
+                                <CommandItem
+                                  key={contraparte.id}
+                                  value={contraparte.nome}
+                                  onSelect={() => {
+                                    setFormData({ ...formData, contraparte_id: contraparte.id });
+                                    setComboboxOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      formData.contraparte_id === contraparte.id ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  {contraparte.nome}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Preenchido automaticamente via Pluggy ou manualmente
                     </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="data-vencimento">Data de Vencimento</Label>
+                    <Input
+                      id="data-vencimento"
+                      type="date"
+                      value={formData.data_vencimento}
+                      onChange={(e) =>
+                        setFormData({ ...formData, data_vencimento: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="data-agendamento">Data de Agendamento</Label>
+                    <Input
+                      id="data-agendamento"
+                      type="date"
+                      value={formData.data_agendamento}
+                      onChange={(e) =>
+                        setFormData({ ...formData, data_agendamento: e.target.value })
+                      }
+                    />
                   </div>
 
                   <div className="space-y-2">
@@ -728,7 +867,13 @@ export default function Transacoes() {
                           .filter((c) => c.tipo === formData.tipo)
                           .map((cat) => (
                             <SelectItem key={cat.id} value={cat.id}>
-                              {cat.icone} {cat.nome}
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded-full"
+                                  style={{ backgroundColor: cat.cor || "#ccc" }}
+                                />
+                                {cat.nome}
+                              </div>
                             </SelectItem>
                           ))}
                       </SelectContent>
@@ -736,7 +881,7 @@ export default function Transacoes() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="centro_custo">Centro de Custo</Label>
+                    <Label htmlFor="centro-custo">Centro de Custo</Label>
                     <Select
                       value={formData.centro_custo_id}
                       onValueChange={(value) =>
@@ -747,9 +892,9 @@ export default function Transacoes() {
                         <SelectValue placeholder="Opcional" />
                       </SelectTrigger>
                       <SelectContent>
-                        {centrosCusto.map((centro) => (
-                          <SelectItem key={centro.id} value={centro.id}>
-                            {centro.codigo} - {centro.nome}
+                        {centrosCusto.map((cc) => (
+                          <SelectItem key={cc.id} value={cc.id}>
+                            {cc.nome}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -786,7 +931,6 @@ export default function Transacoes() {
                         setFormData({ ...formData, observacoes: e.target.value })
                       }
                       rows={3}
-                      placeholder="Informações adicionais..."
                     />
                   </div>
                 </div>
@@ -795,16 +939,11 @@ export default function Transacoes() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setDialogOpen(false);
-                      resetForm();
-                    }}
+                    onClick={() => setDialogOpen(false)}
                   >
                     Cancelar
                   </Button>
-                  <Button type="submit">
-                    {editando ? "Atualizar" : "Criar"}
-                  </Button>
+                  <Button type="submit">Salvar</Button>
                 </div>
               </form>
             </DialogContent>
@@ -812,93 +951,70 @@ export default function Transacoes() {
         </div>
       </div>
 
-      {/* Estatísticas */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Total de Transações</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{transacoes.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-success">Receitas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">
-              R$ {totalReceitas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-danger">Despesas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-danger">
-              R$ {totalDespesas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <DuplicateTransactionsPanel
+        duplicatas={duplicatas}
+        onUpdate={() => loadData()}
+      />
 
-      {/* NOVA ESTRUTURA COM TABS */}
-      <Tabs defaultValue="historico" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue="historico">
+        <TabsList>
           <TabsTrigger value="historico">Histórico</TabsTrigger>
-          <TabsTrigger value="a-vencer">A Vencer</TabsTrigger>
-          <TabsTrigger value="conciliacao">🏦 Conciliação</TabsTrigger>
+          <TabsTrigger value="avencer">A Vencer</TabsTrigger>
+          <TabsTrigger value="conciliacao">Conciliação</TabsTrigger>
         </TabsList>
 
-        {/* ABA HISTÓRICO */}
-        <TabsContent value="historico">
+        <TabsContent value="historico" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div className="flex gap-2">
+              <Button
+                variant={tipoFiltro === 'todas' ? 'default' : 'outline'}
+                onClick={() => setTipoFiltro('todas')}
+              >
+                Todas
+              </Button>
+              <Button
+                variant={tipoFiltro === 'entrada' ? 'default' : 'outline'}
+                onClick={() => setTipoFiltro('entrada')}
+                className="text-green-600"
+              >
+                Receitas
+              </Button>
+              <Button
+                variant={tipoFiltro === 'saída' ? 'default' : 'outline'}
+                onClick={() => setTipoFiltro('saída')}
+                className="text-red-600"
+              >
+                Despesas
+              </Button>
+            </div>
+            {selecionadosHistorico.length > 0 && (
+              <Button variant="destructive" onClick={handleDeleteSelecionadosHistorico}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Excluir ({selecionadosHistorico.length})
+              </Button>
+            )}
+          </div>
+
           <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Histórico de Transações</CardTitle>
-                  <CardDescription>
-                    Últimas {transacoes.length} transações registradas
-                  </CardDescription>
-                </div>
-                <div className="flex gap-2">
-                  {selecionadosHistorico.length > 0 && (
-                    <Button variant="destructive" onClick={handleDeleteSelecionadosHistorico}>
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Excluir Selecionados ({selecionadosHistorico.length})
-                    </Button>
-                  )}
-                  <Button variant="outline" onClick={() => setControleSaldoOpen(true)}>
-                    <DollarSign className="h-4 w-4 mr-2" />
-                    Controle de Saldos
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-12">
+                    <TableHead className="w-[50px]">
                       <Checkbox
                         checked={selecionadosHistorico.length === transacoes.length && transacoes.length > 0}
                         onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelecionadosHistorico(transacoes.map(t => t.id));
-                          } else {
-                            setSelecionadosHistorico([]);
-                          }
+                          if (checked) setSelecionadosHistorico(transacoes.map(t => t.id));
+                          else setSelecionadosHistorico([]);
                         }}
                       />
                     </TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead>Descrição</TableHead>
                     <TableHead>Categoria</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                    <TableHead className="w-24">Ações</TableHead>
+                    <TableHead>Conta</TableHead>
+                    <TableHead>Valor</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -909,216 +1025,45 @@ export default function Transacoes() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    transacoes.map((transacao) => (
-                      <TableRow key={transacao.id}>
+                    transacoes.map((t) => (
+                      <TableRow key={t.id}>
                         <TableCell>
                           <Checkbox
-                            checked={selecionadosHistorico.includes(transacao.id)}
+                            checked={selecionadosHistorico.includes(t.id)}
                             onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelecionadosHistorico([...selecionadosHistorico, transacao.id]);
-                              } else {
-                                setSelecionadosHistorico(selecionadosHistorico.filter(id => id !== transacao.id));
-                              }
+                              if (checked) setSelecionadosHistorico([...selecionadosHistorico, t.id]);
+                              else setSelecionadosHistorico(selecionadosHistorico.filter(id => id !== t.id));
                             }}
                           />
                         </TableCell>
+                        <TableCell>{new Date(t.data_transacao).toLocaleDateString()}</TableCell>
                         <TableCell>
-                          {new Date(transacao.data_transacao).toLocaleDateString("pt-BR")}
-                        </TableCell>
-                         <TableCell>
-                          <div>
-                            <div className="font-medium">{transacao.descricao}</div>
-                            {transacao.observacoes && (
-                              <div className="text-sm text-muted-foreground">
-                                {transacao.observacoes}
-                              </div>
-                            )}
-                            <div className="flex gap-1 mt-1">
-                              {(transacao.origem === 'api' || transacao.origem === 'importacao') && (
-                                <Badge variant="outline">
-                                  {transacao.origem === 'api' ? '🔗 API' : '📁 Importação'}
-                                </Badge>
-                              )}
-                              {transacao.transferencia_vinculada_id && (
-                                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                                  🔄 Transferência {transacao.tipo_transferencia === 'origem' ? 'enviada' : 'recebida'}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {transacao.categoria ? (
-                            <div className="flex items-center gap-2">
-                              <span>{transacao.categoria.icone}</span>
-                              <span>{transacao.categoria.nome}</span>
-                            </div>
-                          ) : (
-                            <Badge variant="outline">Sem categoria</Badge>
+                          <div className="font-medium">{t.descricao}</div>
+                          {t.contraparte && (
+                            <div className="text-xs text-muted-foreground">{t.contraparte.nome}</div>
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            variant={
-                              transacao.status === "pago"
-                                ? "default"
-                                : transacao.status === "pendente"
-                                ? "destructive"
-                                : "secondary"
-                            }
-                          >
-                            {transacao.status}
-                          </Badge>
+                          {t.categoria && (
+                            <Badge variant="outline" style={{ borderColor: t.categoria.cor || undefined }}>
+                              {t.categoria.nome}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{t.conta?.nome_banco}</TableCell>
+                        <TableCell className={cn(
+                          "font-medium",
+                          t.tipo === 'receita' || t.tipo === 'entrada' ? "text-green-600" : "text-red-600"
+                        )}>
+                          {t.tipo === 'receita' || t.tipo === 'entrada' ? '+' : '-'}
+                          R$ {Math.abs(Number(t.valor)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className={`flex items-center justify-end gap-1 font-medium ${
-                            transacao.tipo === "receita" ? "text-success" : "text-danger"
-                          }`}>
-                            {transacao.tipo === "receita" ? (
-                              <TrendingUp className="h-4 w-4" />
-                            ) : (
-                              <TrendingDown className="h-4 w-4" />
-                            )}
-                            R$ {Number(transacao.valor).toLocaleString("pt-BR", {
-                              minimumFractionDigits: 2,
-                            })}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEdit(transacao)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(transacao.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-danger" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ABA A VENCER */}
-        <TabsContent value="a-vencer">
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Transações a Vencer</CardTitle>
-                  <CardDescription>
-                    Boletos DDA e transações futuras ({transacoesAVencer.length})
-                  </CardDescription>
-                </div>
-                {selecionados.length > 0 && (
-                  <div className="flex gap-2">
-                    <Button variant="destructive" onClick={handleDeleteSelecionadosAVencer}>
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Excluir ({selecionados.length})
-                    </Button>
-                    <Button onClick={() => setBaixaDialogOpen(true)}>
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Baixar ({selecionados.length})
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <Checkbox
-                        checked={selecionados.length === transacoesAVencer.length && transacoesAVencer.length > 0}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelecionados(transacoesAVencer.map(t => t.id));
-                          } else {
-                            setSelecionados([]);
-                          }
-                        }}
-                      />
-                    </TableHead>
-                    <TableHead>Vencimento</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Conta</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                    <TableHead className="w-24">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transacoesAVencer.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        Nenhuma transação a vencer
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    transacoesAVencer.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selecionados.includes(item.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelecionados([...selecionados, item.id]);
-                              } else {
-                                setSelecionados(selecionados.filter(id => id !== item.id));
-                              }
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            {new Date(item.data_vencimento).toLocaleDateString("pt-BR")}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{item.descricao}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={item.tipo === 'dda' ? 'secondary' : 'outline'}>
-                            {item.tipo === 'dda' ? (
-                              <div className="flex items-center gap-1">
-                                <Receipt className="h-3 w-3" />
-                                DDA
-                              </div>
-                            ) : 'Manual'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{item.conta || '-'}</TableCell>
-                        <TableCell className="text-right font-medium">
-                          R$ {Number(item.valor).toLocaleString("pt-BR", {
-                            minimumFractionDigits: 2,
-                          })}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelecionados([item.id]);
-                              setBaixaDialogOpen(true);
-                            }}
-                          >
-                            <CheckCircle2 className="h-4 w-4 mr-1" />
-                            Baixar
+                          <Button variant="ghost" size="icon" onClick={() => handleEdit(t)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(t.id)}>
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -1130,346 +1075,167 @@ export default function Transacoes() {
           </Card>
         </TabsContent>
 
-        {/* ABA CONCILIAÇÃO */}
-        <TabsContent value="conciliacao">
-          <Card>
-            <CardHeader>
-              <CardTitle>Conciliação Bancária</CardTitle>
-              <CardDescription>
-                Confirme as transações que foram compensadas no banco
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-4">
-                <Label>Conta Bancária</Label>
-                <Select value={contaConciliacao} onValueChange={setContaConciliacao}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione uma conta" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {contas.map((conta) => (
-                      <SelectItem key={conta.id} value={conta.id}>
-                        {conta.nome_banco} - {conta.numero_conta}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <Label>Data Inicial</Label>
-                  <Input 
-                    type="date" 
-                    value={dataInicialConciliacao}
-                    onChange={(e) => setDataInicialConciliacao(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label>Data Final</Label>
-                  <Input 
-                    type="date" 
-                    value={dataFinalConciliacao}
-                    onChange={(e) => setDataFinalConciliacao(e.target.value)}
-                  />
-                </div>
-              </div>
-              
-              <Button onClick={buscarTransacoesConciliacao} className="mb-4">
-                Buscar Transações
+        <TabsContent value="avencer" className="space-y-4">
+          <div className="flex justify-end">
+            {selecionados.length > 0 && (
+              <Button variant="destructive" onClick={handleDeleteSelecionadosAVencer}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Excluir ({selecionados.length})
               </Button>
-              
+            )}
+          </div>
+          <Card>
+            <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-12">
-                      <Checkbox 
-                        checked={todosMarConciliacao}
-                        onCheckedChange={handleMarcarTodosConciliacao}
+                    <TableHead className="w-[50px]">
+                      <Checkbox
+                        checked={selecionados.length === transacoesAVencer.length && transacoesAVencer.length > 0}
+                        onCheckedChange={(checked) => {
+                          if (checked) setSelecionados(transacoesAVencer.map(t => t.id));
+                          else setSelecionados([]);
+                        }}
                       />
                     </TableHead>
-                    <TableHead>Data</TableHead>
+                    <TableHead>Vencimento</TableHead>
                     <TableHead>Descrição</TableHead>
-                    <TableHead>Categoria</TableHead>
+                    <TableHead>Tipo</TableHead>
                     <TableHead>Valor</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {transacoesConciliacao.length === 0 ? (
+                  {transacoesAVencer.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center">
-                        Nenhuma transação pendente de conciliação
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        Nenhuma transação a vencer
                       </TableCell>
                     </TableRow>
                   ) : (
-                    transacoesConciliacao.map((transacao) => (
-                      <TableRow key={transacao.id}>
+                    transacoesAVencer.map((t) => (
+                      <TableRow key={t.id}>
                         <TableCell>
                           <Checkbox
-                            checked={selecionadosConciliacao.includes(transacao.id)}
-                            onCheckedChange={() => handleToggleConciliacao(transacao.id)}
+                            checked={selecionados.includes(t.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) setSelecionados([...selecionados, t.id]);
+                              else setSelecionados(selecionados.filter(id => id !== t.id));
+                            }}
                           />
                         </TableCell>
+                        <TableCell>{new Date(t.data_vencimento).toLocaleDateString()}</TableCell>
+                        <TableCell>{t.descricao}</TableCell>
                         <TableCell>
-                          {new Date(transacao.data_transacao).toLocaleDateString('pt-BR')}
-                        </TableCell>
-                        <TableCell>{transacao.descricao}</TableCell>
-                        <TableCell>{transacao.categoria?.nome || '-'}</TableCell>
-                        <TableCell className={transacao.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}>
-                          {new Intl.NumberFormat('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          }).format(Number(transacao.valor))}
+                          <Badge variant="outline">{t.tipo === 'dda' ? 'DDA' : 'Manual'}</Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={transacao.status === 'pago' ? 'default' : 'secondary'}>
-                            {transacao.status}
+                          R$ {t.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={t.status === 'vencido' ? 'destructive' : 'secondary'}>
+                            {t.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {t.tipo === 'transacao' && (
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(t.original as Transacao)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
                   )}
                 </TableBody>
               </Table>
-              
-              <div className="flex justify-end gap-2 mt-4">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setSelecionadosConciliacao([])}
-                  disabled={selecionadosConciliacao.length === 0}
-                >
-                  Limpar Seleção
-                </Button>
-                <Button 
-                  onClick={handleConciliarSelecionados}
-                  disabled={selecionadosConciliacao.length === 0}
-                >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Conciliar {selecionadosConciliacao.length} Transação(ões)
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
 
-      {/* Dialog de Baixa */}
-      <Dialog open={baixaDialogOpen} onOpenChange={setBaixaDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Baixar Transação(ões)</DialogTitle>
-            <DialogDescription>
-              Informe a data de pagamento e a conta bancária
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="dataBaixa">Data do Pagamento *</Label>
-              <Input
-                id="dataBaixa"
-                type="date"
-                value={dataBaixa}
-                onChange={(e) => setDataBaixa(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="contaBaixa">Conta Bancária *</Label>
-              <Select value={contaBaixa} onValueChange={setContaBaixa}>
+        <TabsContent value="conciliacao" className="space-y-4">
+          <div className="flex gap-4 items-end">
+            <div className="space-y-2 flex-1">
+              <Label>Conta Bancária</Label>
+              <Select value={contaConciliacao} onValueChange={setContaConciliacao}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione a conta" />
                 </SelectTrigger>
                 <SelectContent>
-                  {contas.map((conta) => (
-                    <SelectItem key={conta.id} value={conta.id}>
-                      {conta.nome_banco}
-                    </SelectItem>
+                  {contas.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.nome_banco}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label>Data Inicial</Label>
+              <Input type="date" value={dataInicialConciliacao} onChange={e => setDataInicialConciliacao(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Data Final</Label>
+              <Input type="date" value={dataFinalConciliacao} onChange={e => setDataFinalConciliacao(e.target.value)} />
+            </div>
+            <Button onClick={buscarTransacoesConciliacao}>Buscar</Button>
           </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setBaixaDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={async () => {
-              if (!dataBaixa || !contaBaixa) {
-                toast({
-                  title: "Erro",
-                  description: "Preencha todos os campos",
-                  variant: "destructive",
-                });
-                return;
-              }
 
-              try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (!user) throw new Error("Usuário não autenticado");
-
-                for (const id of selecionados) {
-                  const item = transacoesAVencer.find(t => t.id === id);
-                  if (!item) continue;
-
-                  if (item.tipo === 'dda') {
-                    // Verificar duplicação para DDA
-                    const { data: existente } = await supabase
-                      .from("transacoes")
-                      .select("id")
-                      .eq("conta_bancaria_id", contaBaixa)
-                      .eq("data_transacao", dataBaixa)
-                      .eq("valor", item.valor)
-                      .eq("descricao", item.descricao)
-                      .maybeSingle();
-
-                    if (existente) {
-                      toast({
-                        title: "Duplicação detectada",
-                        description: `Já existe uma transação para ${item.descricao}`,
-                        variant: "destructive",
-                      });
-                      continue;
-                    }
-
-                    // Criar transação a partir do DDA
-                    const { error: transacaoError } = await supabase
-                      .from("transacoes")
-                      .insert({
-                        user_id: user.id,
-                        data_transacao: dataBaixa,
-                        descricao: item.descricao,
-                        valor: item.valor,
-                        tipo: "despesa",
-                        status: "pago",
-                        conta_bancaria_id: contaBaixa,
-                        origem: "dda",
-                      });
-
-                    if (transacaoError) throw transacaoError;
-
-                    // Atualizar status do DDA
-                    const { error: ddaError } = await supabase
-                      .from("dda_boletos")
-                      .update({ status: "pago" })
-                      .eq("id", id);
-
-                    if (ddaError) throw ddaError;
-                  } else {
-                    // Atualizar transação manual
-                    const { error } = await supabase
-                      .from("transacoes")
-                      .update({
-                        data_transacao: dataBaixa,
-                        conta_bancaria_id: contaBaixa,
-                        status: "pago",
-                      })
-                      .eq("id", id);
-
-                    if (error) throw error;
-                  }
-                }
-
-                toast({
-                  title: "Sucesso",
-                  description: `${selecionados.length} transação(ões) baixada(s)`,
-                });
-
-                setBaixaDialogOpen(false);
-                setSelecionados([]);
-                setDataBaixa("");
-                setContaBaixa("");
-                loadData();
-              } catch (error: any) {
-                toast({
-                  title: "Erro ao baixar transações",
-                  description: error.message,
-                  variant: "destructive",
-                });
-              }
-            }}>
-              Confirmar Baixa
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog de Controle de Saldos */}
-      <Dialog open={controleSaldoOpen} onOpenChange={setControleSaldoOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Controle de Saldos</DialogTitle>
-            <DialogDescription>
-              Comparação entre saldo do banco e saldo do sistema
-            </DialogDescription>
-          </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Conta Bancária</TableHead>
-                <TableHead className="text-right">Saldo Banco</TableHead>
-                <TableHead className="text-right">Saldo Sistema</TableHead>
-                <TableHead className="text-right">Diferença</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {contas.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                    Nenhuma conta cadastrada
-                  </TableCell>
-                </TableRow>
-              ) : (
-                contas.map((conta) => {
-                  const saldoSistema = transacoes
-                    .filter(t => t.conta_bancaria_id === conta.id && t.status === 'pago')
-                    .reduce((acc, t) => {
-                      return acc + (t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor));
-                    }, Number(conta.saldo_inicial || 0));
-                  
-                  const saldoBanco = Number(conta.saldo_atual || 0);
-                  const diferenca = saldoBanco - saldoSistema;
-
-                  return (
-                    <TableRow key={conta.id}>
-                      <TableCell className="font-medium">{conta.nome_banco}</TableCell>
-                      <TableCell className="text-right">
-                        R$ {saldoBanco.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        R$ {saldoSistema.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className={diferenca === 0 ? 'text-muted-foreground' : diferenca > 0 ? 'text-success' : 'text-danger'}>
-                          R$ {Math.abs(diferenca).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                          {diferenca !== 0 && (diferenca > 0 ? ' ↑' : ' ↓')}
-                        </span>
-                      </TableCell>
+          {transacoesConciliacao.length > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Transações Pendentes</CardTitle>
+                <Button onClick={handleConciliarSelecionados} disabled={selecionadosConciliacao.length === 0}>
+                  Conciliar Selecionados ({selecionadosConciliacao.length})
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[50px]">
+                        <Checkbox
+                          checked={todosMarConciliacao}
+                          onCheckedChange={handleMarcarTodosConciliacao}
+                        />
+                      </TableHead>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead>Valor</TableHead>
                     </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </DialogContent>
-      </Dialog>
+                  </TableHeader>
+                  <TableBody>
+                    {transacoesConciliacao.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selecionadosConciliacao.includes(t.id)}
+                            onCheckedChange={() => handleToggleConciliacao(t.id)}
+                          />
+                        </TableCell>
+                        <TableCell>{new Date(t.data_transacao).toLocaleDateString()}</TableCell>
+                        <TableCell>{t.descricao}</TableCell>
+                        <TableCell>R$ {Number(t.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
 
-      {/* AlertDialog de Confirmação de Edição */}
       <AlertDialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Atenção: Transação do Banco</AlertDialogTitle>
+            <AlertDialogTitle>Editar Transação Sincronizada</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta transação veio de {transacaoEditada?.origem === 'api' ? 'integração bancária (API)' : 'importação de arquivo'}. 
-              Editar esta transação pode prejudicar o controle de saldo, pois ela foi registrada automaticamente pelo banco.
-              Deseja continuar?
+              Esta transação foi importada automaticamente. Alterações manuais podem ser sobrescritas em futuras sincronizações. Deseja continuar?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmarEdicao}>
-              Sim, editar mesmo assim
-            </AlertDialogAction>
+            <AlertDialogAction onClick={confirmarEdicao}>Continuar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

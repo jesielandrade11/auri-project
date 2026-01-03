@@ -33,7 +33,7 @@ export default function FluxoCaixa() {
     const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     return inicio.toISOString().split("T")[0];
   });
-  
+
   const [dataFim, setDataFim] = useState(() => {
     const hoje = new Date();
     return hoje.toISOString().split("T")[0];
@@ -66,7 +66,7 @@ export default function FluxoCaixa() {
     const existing = acc.find(d => d.data === data);
 
     if (existing) {
-      if (item.tipo === "receita") {
+      if (item.tipo === "entrada") {
         if (item.tipo_fluxo === "realizado") existing.receitasRealizadas += Number(item.valor);
         else existing.receitasPrevistas += Number(item.valor);
       } else {
@@ -76,8 +76,8 @@ export default function FluxoCaixa() {
     } else {
       acc.push({
         data,
-        receitasRealizadas: item.tipo === "receita" && item.tipo_fluxo === "realizado" ? Number(item.valor) : 0,
-        receitasPrevistas: item.tipo === "receita" && item.tipo_fluxo === "previsto" ? Number(item.valor) : 0,
+        receitasRealizadas: item.tipo === "entrada" && item.tipo_fluxo === "realizado" ? Number(item.valor) : 0,
+        receitasPrevistas: item.tipo === "entrada" && item.tipo_fluxo === "previsto" ? Number(item.valor) : 0,
         despesasRealizadas: item.tipo === "despesa" && item.tipo_fluxo === "realizado" ? Number(item.valor) : 0,
         despesasPrevistas: item.tipo === "despesa" && item.tipo_fluxo === "previsto" ? Number(item.valor) : 0,
       });
@@ -89,7 +89,7 @@ export default function FluxoCaixa() {
   // Calcular totais
   const totais = fluxoCaixa?.reduce((acc, item) => {
     const valor = Number(item.valor);
-    if (item.tipo === "receita") {
+    if (item.tipo === "entrada") {
       if (item.tipo_fluxo === "realizado") acc.receitasRealizadas += valor;
       else acc.receitasPrevistas += valor;
     } else {
@@ -225,7 +225,7 @@ export default function FluxoCaixa() {
       <Card>
         <CardHeader>
           <CardTitle>Evolução do Fluxo de Caixa</CardTitle>
-          <CardDescription>Visualização de receitas e despesas ao longo do período</CardDescription>
+          <CardDescription>Visualização de entradas e saídas ao longo do período</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -240,8 +240,8 @@ export default function FluxoCaixa() {
                 <YAxis />
                 <Tooltip formatter={(value: any) => formatCurrency(value)} />
                 <Legend />
-                <Line type="monotone" dataKey="receitasRealizadas" name="Receitas Realizadas" stroke="hsl(var(--success))" strokeWidth={2} />
-                <Line type="monotone" dataKey="receitasPrevistas" name="Receitas Previstas" stroke="hsl(var(--success))" strokeWidth={2} strokeDasharray="5 5" opacity={0.6} />
+                <Line type="monotone" dataKey="receitasRealizadas" name="Entradas Realizadas" stroke="hsl(var(--success))" strokeWidth={2} />
+                <Line type="monotone" dataKey="receitasPrevistas" name="Entradas Previstas" stroke="hsl(var(--success))" strokeWidth={2} strokeDasharray="5 5" opacity={0.6} />
                 <Line type="monotone" dataKey="despesasRealizadas" name="Despesas Realizadas" stroke="hsl(var(--destructive))" strokeWidth={2} />
                 <Line type="monotone" dataKey="despesasPrevistas" name="Despesas Previstas" stroke="hsl(var(--destructive))" strokeWidth={2} strokeDasharray="5 5" opacity={0.6} />
               </LineChart>
@@ -285,8 +285,8 @@ export default function FluxoCaixa() {
                     <TableCell className="font-medium">{item.descricao}</TableCell>
                     <TableCell>{item.categoria_nome || "-"}</TableCell>
                     <TableCell>
-                      <Badge variant={item.tipo === "receita" ? "default" : "destructive"}>
-                        {item.tipo === "receita" ? "Entrada" : "Saída"}
+                      <Badge variant={item.tipo === "entrada" ? "default" : "destructive"}>
+                        {item.tipo === "entrada" ? "Entrada" : "Saída"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -294,7 +294,7 @@ export default function FluxoCaixa() {
                         {item.tipo_fluxo === "realizado" ? "Realizado" : "Previsto"}
                       </Badge>
                     </TableCell>
-                    <TableCell className={`text-right font-medium ${item.tipo === "receita" ? "text-success" : "text-destructive"}`}>
+                    <TableCell className={`text-right font-medium ${item.tipo === "entrada" ? "text-success" : "text-destructive"}`}>
                       {formatCurrency(Number(item.valor))}
                     </TableCell>
                   </TableRow>

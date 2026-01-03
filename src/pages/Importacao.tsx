@@ -7,8 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Upload, FileText, File, Database, Loader2 } from "lucide-react";
+import { Upload, FileText, File, Database, Loader2, Building2, CheckCircle2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ConnectBankButton } from "@/components/accounts/ConnectBankButton";
+import { openFinanceService } from "@/services/openFinance";
 
 export default function Importacao() {
   const { toast } = useToast();
@@ -39,7 +41,7 @@ export default function Importacao() {
         .select("*")
         .eq("user_id", user.id)
         .order("nome_banco");
-      
+
       if (error) {
         console.error("Erro ao carregar contas:", error);
         toast({
@@ -49,7 +51,7 @@ export default function Importacao() {
         });
         return;
       }
-      
+
       if (data) setContas(data);
     } catch (error) {
       console.error("Erro ao carregar contas:", error);
@@ -95,7 +97,7 @@ export default function Importacao() {
       }
 
       const tipoArquivo = getTipoArquivo(arquivo.name);
-      
+
       // Criar registro de importação com user_id
       const { data: importacao, error: importError } = await supabase
         .from("importacoes")
@@ -113,7 +115,7 @@ export default function Importacao() {
 
       // Ler conteúdo do arquivo de forma apropriada
       let conteudo: string;
-      
+
       if (tipoArquivo === 'pdf') {
         // PDFs precisam ser lidos como base64
         const reader = new FileReader();
@@ -156,6 +158,96 @@ export default function Importacao() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePluggySuccess = async (itemData: any) => {
+    try {
+      // Create account with Pluggy data
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      console.log("Pluggy Item Connected:", itemData);
+
+      // Extract accounts from itemData
+      const accounts = itemData.accounts || [];
+      let importedCount = 0;
+      let skippedCount = 0;
+
+      for (const account of accounts) {
+        // Check if account already exists
+        const { data: existing } = await supabase
+          .from('contas_bancarias')
+          .select('id')
+          .eq('pluggy_account_id', account.id)
+          .maybeSingle();
+
+        if (existing) {
+          console.log(`Account ${account.name} (${account.id}) already exists.`);
+          skippedCount++;
+          continue;
+        }
+
+        // Insert new account
+        const { error } = await supabase
+          .from('contas_bancarias')
+          .insert({
+            user_id: user.id,
+            nome_banco: account.name || itemData.item.connector.name,
+            banco: itemData.item.connector.name,
+            tipo_conta: account.type || 'corrente',
+            numero_conta: account.number,
+            agencia: account.agency,
+            saldo_inicial: account.balance || 0,
+            saldo_atual: account.balance || 0,
+            pluggy_item_id: itemData.item.id,
+            pluggy_connector_id: itemData.item.connector.id,
+            pluggy_account_id: account.id,
+            auto_sync: true,
+            ativo: true
+          });
+
+        if (error) {
+          console.error(`Error inserting account ${account.name}:`, error);
+          toast({
+            title: "Erro ao salvar conta",
+            description: `Erro ao salvar ${account.name}: ${error.message}`,
+            variant: "destructive"
+          });
+        } else {
+          importedCount++;
+        }
+      }
+
+      toast({
+        title: "Conexão processada",
+        description: `${importedCount} conta(s) nova(s) adicionada(s). ${skippedCount} conta(s) já existia(m).`,
+      });
+
+      // Trigger initial sync for the item
+      if (importedCount > 0 || skippedCount > 0) {
+        toast({
+          title: "Sincronizando transações...",
+          description: "Isso pode levar alguns instantes. Você será redirecionado em breve.",
+        });
+
+        await openFinanceService.syncItem(itemData.item.id);
+
+        toast({
+          title: "Sincronização concluída",
+          description: "Transações importadas com sucesso!",
+        });
+
+        setTimeout(() => navigate("/contas"), 1500);
+      }
+
+    } catch (error: any) {
+      console.error('Error saving account:', error);
+      toast({
+        title: "Erro ao processar conexão",
+        description: error.message || "Houve um erro ao salvar os dados da conta.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -226,8 +318,8 @@ export default function Importacao() {
                 </Alert>
               )}
 
-              <Button 
-                onClick={handleImportar} 
+              <Button
+                onClick={handleImportar}
                 disabled={loading || !arquivo || !contaBancariaId}
                 className="w-full"
               >
@@ -259,14 +351,13 @@ export default function Importacao() {
             <CardContent className="space-y-4">
               <Alert>
                 <AlertDescription>
-                  A integração com APIs bancárias estará disponível em breve. 
-                  Suportaremos Open Banking e conexões diretas com principais bancos.
+                  Conecte sua conta bancária para importar transações automaticamente via Open Finance.
                 </AlertDescription>
               </Alert>
 
               <div className="space-y-2">
-                <p className="text-sm font-medium">Bancos planejados:</p>
-                <ul className="text-sm text-muted-foreground space-y-1">
+                <p className="text-sm font-medium">Bancos suportados:</p>
+                <ul className="text-sm text-muted-foreground grid grid-cols-2 gap-1">
                   <li>• Banco do Brasil</li>
                   <li>• Bradesco</li>
                   <li>• Itaú</li>
@@ -274,12 +365,13 @@ export default function Importacao() {
                   <li>• Caixa Econômica</li>
                   <li>• Nubank</li>
                   <li>• Inter</li>
+                  <li>• BTG Pactual</li>
+                  <li>• XP Investimentos</li>
+                  <li>• E muitos outros...</li>
                 </ul>
               </div>
 
-              <Button disabled className="w-full">
-                Conectar Banco (Em breve)
-              </Button>
+              <ConnectBankButton onItemConnected={handlePluggySuccess} />
             </CardContent>
           </Card>
         </div>

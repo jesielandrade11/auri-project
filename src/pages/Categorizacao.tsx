@@ -192,7 +192,7 @@ export default function Categorizacao() {
             <Tag className="h-4 w-4 mr-2" />
             Gerenciar Categorias
           </Button>
-          <Button 
+          <Button
             onClick={salvarClassificacoes}
             disabled={selecionadas === 0 || saving}
           >
@@ -265,11 +265,10 @@ export default function Categorizacao() {
               {transacoes.map((transacao) => (
                 <div
                   key={transacao.id}
-                  className={`p-4 rounded-lg border ${
-                    transacao.selecionada 
-                      ? "border-primary bg-accent/50" 
+                  className={`p-4 rounded-lg border ${transacao.selecionada
+                      ? "border-primary bg-accent/50"
                       : "border-border hover:border-muted-foreground/50"
-                  } transition-colors`}
+                    } transition-colors`}
                 >
                   <div className="flex items-start gap-4">
                     {/* Checkbox */}
@@ -284,16 +283,20 @@ export default function Categorizacao() {
                       <div className="flex items-center justify-between mb-2">
                         <div>
                           <p className="font-medium">{transacao.descricao}</p>
+                          {(transacao as any).contraparte && (
+                            <p className="text-sm text-muted-foreground italic">
+                              {(transacao as any).contraparte}
+                            </p>
+                          )}
                           <p className="text-sm text-muted-foreground">
                             {new Date(transacao.data_transacao).toLocaleDateString("pt-BR")}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className={`text-lg font-bold ${
-                            transacao.tipo === "receita" 
-                              ? "text-success" 
+                          <p className={`text-lg font-bold ${transacao.tipo === "receita"
+                              ? "text-success"
                               : "text-danger"
-                          }`}>
+                            }`}>
                             {transacao.tipo === "receita" ? "+" : "-"}
                             R$ {Number(transacao.valor).toLocaleString("pt-BR", {
                               minimumFractionDigits: 2,

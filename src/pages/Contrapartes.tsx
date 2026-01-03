@@ -10,16 +10,31 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Users, UserCheck, UserX, Search, Receipt } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Pencil, Trash2, Users, UserCheck, UserX, Search, Receipt, Building2, Check, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+
+import { PendingContrapartesPanel } from "@/components/contrapartes/PendingContrapartesPanel";
 
 interface Contraparte {
   id: string;
   nome: string;
-  papel: "cliente" | "fornecedor" | "ambos";
+  // papel: string | null; // Legacy
   documento: string | null;
   email: string | null;
   telefone: string | null;
@@ -27,16 +42,17 @@ interface Contraparte {
   observacoes: string | null;
   ativo: boolean;
   created_at: string;
+  contraparte_roles: { role: string }[];
 }
 
-export default function Contrapartes() {
+export default function Contatos() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [tabAtiva, setTabAtiva] = useState<"todos" | "clientes" | "fornecedores">("todos");
+  const [tabAtiva, setTabAtiva] = useState<"todos" | "clientes" | "fornecedores" | "outros">("todos");
   const [formData, setFormData] = useState({
     nome: "",
-    papel: "fornecedor" as "cliente" | "fornecedor" | "ambos",
+    roles: [] as string[],
     documento: "",
     email: "",
     telefone: "",
@@ -44,6 +60,10 @@ export default function Contrapartes() {
     observacoes: "",
     ativo: true,
   });
+  const [availableRoles, setAvailableRoles] = useState<string[]>(['cliente', 'fornecedor', 'empresa', 'titular']);
+  const [rolePopoverOpen, setRolePopoverOpen] = useState(false);
+  const [newRole, setNewRole] = useState("");
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -56,11 +76,23 @@ export default function Contrapartes() {
 
       const { data, error } = await supabase
         .from("contrapartes")
-        .select("*")
+        .select("*, contraparte_roles(role)")
         .eq("user_id", user.user.id)
         .order("nome");
 
       if (error) throw error;
+
+      // Fetch all distinct roles for the filter/selector
+      const { data: rolesData } = await supabase
+        .from('contraparte_roles')
+        .select('role');
+
+      if (rolesData) {
+        const distinctRoles = Array.from(new Set(rolesData.map(r => r.role)));
+        const defaults = ['cliente', 'fornecedor', 'empresa', 'titular'];
+        setAvailableRoles(Array.from(new Set([...defaults, ...distinctRoles])).sort());
+      }
+
       return data as Contraparte[];
     },
   });
@@ -70,38 +102,50 @@ export default function Contrapartes() {
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) throw new Error("Não autenticado");
 
-      const { error } = await supabase.from("contrapartes").insert({
+      // 1. Insert contraparte
+      const { data: newContact, error } = await supabase.from("contrapartes").insert({
         user_id: user.user.id,
         nome: data.nome,
-        papel: data.papel,
+        // papel: data.roles.length > 0 ? data.roles[0] : null, // Legacy
         documento: data.documento || null,
         email: data.email || null,
         telefone: data.telefone || null,
         endereco: data.endereco || null,
         observacoes: data.observacoes || null,
         ativo: data.ativo,
-      });
+      }).select().single();
 
       if (error) throw error;
+
+      // 2. Insert roles
+      if (data.roles.length > 0) {
+        const rolesToInsert = data.roles.map(r => ({
+          contraparte_id: newContact.id,
+          role: r
+        }));
+        const { error: rolesError } = await supabase.from('contraparte_roles').insert(rolesToInsert);
+        if (rolesError) throw rolesError;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contrapartes"] });
-      toast({ title: "Contraparte criada com sucesso!" });
+      toast({ title: "Contato criado com sucesso!" });
       setOpen(false);
       resetForm();
     },
     onError: (error) => {
-      toast({ title: "Erro ao criar contraparte", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao criar contato", description: error.message, variant: "destructive" });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
+      // 1. Update contraparte details
       const { error } = await supabase
         .from("contrapartes")
         .update({
           nome: data.nome,
-          papel: data.papel,
+          // papel: data.roles.length > 0 ? data.roles[0] : null, // Legacy
           documento: data.documento || null,
           email: data.email || null,
           telefone: data.telefone || null,
@@ -112,15 +156,32 @@ export default function Contrapartes() {
         .eq("id", id);
 
       if (error) throw error;
+
+      // 2. Update roles (delete all and re-insert)
+      const { error: deleteError } = await supabase
+        .from('contraparte_roles')
+        .delete()
+        .eq('contraparte_id', id);
+
+      if (deleteError) throw deleteError;
+
+      if (data.roles.length > 0) {
+        const rolesToInsert = data.roles.map(r => ({
+          contraparte_id: id,
+          role: r
+        }));
+        const { error: insertError } = await supabase.from('contraparte_roles').insert(rolesToInsert);
+        if (insertError) throw insertError;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contrapartes"] });
-      toast({ title: "Contraparte atualizada com sucesso!" });
+      toast({ title: "Contato atualizado com sucesso!" });
       setOpen(false);
       resetForm();
     },
     onError: (error) => {
-      toast({ title: "Erro ao atualizar contraparte", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao atualizar contato", description: error.message, variant: "destructive" });
     },
   });
 
@@ -131,17 +192,17 @@ export default function Contrapartes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contrapartes"] });
-      toast({ title: "Contraparte inativada com sucesso!" });
+      toast({ title: "Contato inativado com sucesso!" });
     },
     onError: (error) => {
-      toast({ title: "Erro ao inativar contraparte", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao inativar contato", description: error.message, variant: "destructive" });
     },
   });
 
   const resetForm = () => {
     setFormData({
       nome: "",
-      papel: "fornecedor",
+      roles: ["fornecedor"],
       documento: "",
       email: "",
       telefone: "",
@@ -155,7 +216,7 @@ export default function Contrapartes() {
   const handleEdit = (contraparte: Contraparte) => {
     setFormData({
       nome: contraparte.nome,
-      papel: contraparte.papel,
+      roles: contraparte.contraparte_roles.map(r => r.role),
       documento: contraparte.documento || "",
       email: contraparte.email || "",
       telefone: contraparte.telefone || "",
@@ -180,34 +241,95 @@ export default function Contrapartes() {
     navigate("/transacoes", { state: { contraparteId } });
   };
 
+  const toggleRole = (role: string) => {
+    setFormData(prev => {
+      if (prev.roles.includes(role)) {
+        return { ...prev, roles: prev.roles.filter(r => r !== role) };
+      } else {
+        return { ...prev, roles: [...prev.roles, role] };
+      }
+    });
+  };
+
+  const addNewRole = () => {
+    if (!newRole.trim()) return;
+    const role = newRole.trim().toLowerCase();
+
+    if (!availableRoles.includes(role)) {
+      setAvailableRoles(prev => [...prev, role].sort());
+    }
+
+    if (!formData.roles.includes(role)) {
+      setFormData(prev => ({ ...prev, roles: [...prev.roles, role] }));
+    }
+    setNewRole("");
+  };
+
   const contrapartesFiltradas = contrapartes?.filter((c) => {
     const matchSearch = c.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       c.documento?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchTab = 
-      tabAtiva === "todos" ? c.ativo :
-      tabAtiva === "clientes" ? (c.papel === "cliente" || c.papel === "ambos") && c.ativo :
-      (c.papel === "fornecedor" || c.papel === "ambos") && c.ativo;
+      c.documento?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const roles = c.contraparte_roles.map(r => r.role);
+    let matchTab = false;
+    if (tabAtiva === "todos") {
+      matchTab = c.ativo;
+    } else if (tabAtiva === "clientes") {
+      matchTab = roles.includes("cliente") && c.ativo;
+    } else if (tabAtiva === "fornecedores") {
+      matchTab = roles.includes("fornecedor") && c.ativo;
+    } else if (tabAtiva === "outros") {
+      matchTab = (roles.includes("empresa") || roles.includes("titular") || (!roles.includes("cliente") && !roles.includes("fornecedor"))) && c.ativo;
+    }
+
     return matchSearch && matchTab;
   });
 
-  const getPapelBadge = (papel: string) => {
-    if (papel === "cliente") return <Badge variant="default" className="bg-success">Cliente</Badge>;
-    if (papel === "fornecedor") return <Badge variant="destructive">Fornecedor</Badge>;
-    return <Badge variant="secondary">Ambos</Badge>;
+  const getPapelBadges = (roles: { role: string }[]) => {
+    if (!roles || roles.length === 0) return <Badge variant="secondary">Sem papel</Badge>;
+
+    return (
+      <div className="flex flex-wrap gap-1">
+        {roles.map(r => {
+          let variant: "default" | "destructive" | "outline" | "secondary" = "secondary";
+          let className = "";
+
+          if (r.role === "cliente") {
+            variant = "default";
+            className = "bg-green-600 hover:bg-green-700";
+          } else if (r.role === "fornecedor") {
+            variant = "destructive";
+          } else if (r.role === "empresa") {
+            variant = "outline";
+            className = "border-blue-500 text-blue-500";
+          } else if (r.role === "titular") {
+            variant = "outline";
+            className = "border-purple-500 text-purple-500";
+          }
+
+          return (
+            <Badge key={r.role} variant={variant} className={className}>
+              {r.role.charAt(0).toUpperCase() + r.role.slice(1)}
+            </Badge>
+          );
+        })}
+      </div>
+    );
   };
 
   const stats = {
     total: contrapartes?.filter(c => c.ativo).length || 0,
-    clientes: contrapartes?.filter(c => c.ativo && (c.papel === "cliente" || c.papel === "ambos")).length || 0,
-    fornecedores: contrapartes?.filter(c => c.ativo && (c.papel === "fornecedor" || c.papel === "ambos")).length || 0,
+    clientes: contrapartes?.filter(c => c.ativo && c.contraparte_roles.some(r => r.role === "cliente")).length || 0,
+    fornecedores: contrapartes?.filter(c => c.ativo && c.contraparte_roles.some(r => r.role === "fornecedor")).length || 0,
+    outros: contrapartes?.filter(c => c.ativo && c.contraparte_roles.some(r => r.role === "empresa" || r.role === "titular")).length || 0,
   };
 
   return (
     <div className="p-8 space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Fornecedores & Clientes</h1>
-          <p className="text-muted-foreground">Gerencie seus parceiros comerciais</p>
+          <h1 className="text-3xl font-bold">Contatos</h1>
+          <p className="text-muted-foreground">Gerencie seus parceiros comerciais, empresas e titulares</p>
+          <PendingContrapartesPanel />
         </div>
         <Dialog open={open} onOpenChange={(isOpen) => {
           setOpen(isOpen);
@@ -216,12 +338,12 @@ export default function Contrapartes() {
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
-              Nova Contraparte
+              Novo Contato
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{editingId ? "Editar" : "Nova"} Contraparte</DialogTitle>
+              <DialogTitle>{editingId ? "Editar" : "Novo"} Contato</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -234,19 +356,76 @@ export default function Contrapartes() {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="papel">Papel*</Label>
-                  <Select value={formData.papel} onValueChange={(value: any) => setFormData({ ...formData, papel: value })}>
-                    <SelectTrigger id="papel">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cliente">Cliente</SelectItem>
-                      <SelectItem value="fornecedor">Fornecedor</SelectItem>
-                      <SelectItem value="ambos">Ambos</SelectItem>
-                    </SelectContent>
-                  </Select>
+
+                <div className="space-y-2 col-span-2">
+                  <Label>Papéis</Label>
+                  <div className="flex flex-wrap gap-2 mb-2 p-2 border rounded-md min-h-[40px]">
+                    {formData.roles.length > 0 ? (
+                      formData.roles.map(role => (
+                        <Badge key={role} variant="secondary" className="flex items-center gap-1">
+                          {role}
+                          <X
+                            className="h-3 w-3 cursor-pointer hover:text-destructive"
+                            onClick={() => toggleRole(role)}
+                          />
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground text-sm italic">Nenhum papel selecionado</span>
+                    )}
+                  </div>
+
+                  <Popover open={rolePopoverOpen} onOpenChange={setRolePopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full justify-start">
+                        <Plus className="mr-2 h-4 w-4" /> Adicionar Papel
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[200px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar papel..." />
+                        <CommandList>
+                          <CommandEmpty>
+                            <div className="p-2">
+                              <p className="text-xs text-muted-foreground mb-2">Papel não encontrado.</p>
+                              <div className="flex gap-2">
+                                <Input
+                                  value={newRole}
+                                  onChange={(e) => setNewRole(e.target.value)}
+                                  placeholder="Novo papel"
+                                  className="h-7 text-xs"
+                                />
+                                <Button size="sm" className="h-7" onClick={addNewRole}>
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          </CommandEmpty>
+                          <CommandGroup>
+                            {availableRoles.map((role) => (
+                              <CommandItem
+                                key={role}
+                                value={role}
+                                onSelect={() => toggleRole(role)}
+                              >
+                                <div className={cn(
+                                  "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                  formData.roles.includes(role)
+                                    ? "bg-primary text-primary-foreground"
+                                    : "opacity-50 [&_svg]:invisible"
+                                )}>
+                                  <Check className={cn("h-4 w-4")} />
+                                </div>
+                                <span className="capitalize">{role}</span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="documento">CPF/CNPJ</Label>
                   <Input
@@ -314,7 +493,7 @@ export default function Contrapartes() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -345,12 +524,22 @@ export default function Contrapartes() {
             <div className="text-2xl font-bold text-destructive">{stats.fornecedores}</div>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-blue-500" /> Outros
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-500">{stats.outros}</div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Lista de Contrapartes</CardTitle>
+            <CardTitle>Lista de Contatos</CardTitle>
             <div className="flex items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -370,6 +559,7 @@ export default function Contrapartes() {
               <TabsTrigger value="todos">Todos</TabsTrigger>
               <TabsTrigger value="clientes">Clientes</TabsTrigger>
               <TabsTrigger value="fornecedores">Fornecedores</TabsTrigger>
+              <TabsTrigger value="outros">Outros</TabsTrigger>
             </TabsList>
 
             <TabsContent value={tabAtiva}>
@@ -380,7 +570,7 @@ export default function Contrapartes() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nome</TableHead>
-                      <TableHead>Papel</TableHead>
+                      <TableHead>Papéis</TableHead>
                       <TableHead>Documento</TableHead>
                       <TableHead>Contato</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
@@ -390,7 +580,7 @@ export default function Contrapartes() {
                     {contrapartesFiltradas?.map((contraparte) => (
                       <TableRow key={contraparte.id}>
                         <TableCell className="font-medium">{contraparte.nome}</TableCell>
-                        <TableCell>{getPapelBadge(contraparte.papel)}</TableCell>
+                        <TableCell>{getPapelBadges(contraparte.contraparte_roles)}</TableCell>
                         <TableCell className="text-muted-foreground">{contraparte.documento || "-"}</TableCell>
                         <TableCell className="text-muted-foreground">
                           <div className="text-sm">
@@ -416,7 +606,7 @@ export default function Contrapartes() {
                               variant="ghost"
                               size="icon"
                               onClick={() => {
-                                if (confirm("Tem certeza que deseja inativar esta contraparte?")) {
+                                if (confirm("Tem certeza que deseja inativar este contato?")) {
                                   deleteMutation.mutate(contraparte.id);
                                 }
                               }}
