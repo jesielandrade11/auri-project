@@ -5,28 +5,25 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Calendar, TrendingDown, TrendingUp, Loader2, Receipt } from "lucide-react";
+import { CreditCard, Calendar, Loader2 } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 type ContaBancaria = Tables<"contas_bancarias">;
-type Fatura = Tables<"faturas">;
 
 interface Transacao {
     id: string;
     data_transacao: string;
     descricao: string;
     valor: number;
-    tipo: 'entrada' | 'saída';
+    tipo: string;
     categoria?: {
         nome: string;
     } | null;
-    categoria_original?: string | null;
     contraparte?: {
         nome: string;
     } | null;
-    metadata?: any;
 }
 
 export default function CartaoCredito() {
@@ -34,12 +31,16 @@ export default function CartaoCredito() {
     const [loading, setLoading] = useState(true);
     const [cartoes, setCartoes] = useState<ContaBancaria[]>([]);
     const [cartaoSelecionado, setCartaoSelecionado] = useState<string>("");
-
-    const [faturas, setFaturas] = useState<Fatura[]>([]);
-    const [faturaSelecionada, setFaturaSelecionada] = useState<string>("");
-
-    const [transacoesFatura, setTransacoesFatura] = useState<Transacao[]>([]);
+    const [mesSelecionado, setMesSelecionado] = useState<string>(format(new Date(), "yyyy-MM"));
+    const [transacoes, setTransacoes] = useState<Transacao[]>([]);
     const { toast } = useToast();
+
+    // Available months for selection (last 12 months)
+    const mesesDisponiveis = Array.from({ length: 12 }, (_, i) => {
+        const date = new Date();
+        date.setMonth(date.getMonth() - i);
+        return format(date, "yyyy-MM");
+    });
 
     // 1. Load Credit Cards on mount
     useEffect(() => {
@@ -50,7 +51,6 @@ export default function CartaoCredito() {
     useEffect(() => {
         const cartaoId = searchParams.get("id");
         if (cartaoId && cartoes.length > 0) {
-            // Validate if id exists in loaded cards
             if (cartoes.some(c => c.id === cartaoId)) {
                 setCartaoSelecionado(cartaoId);
             } else {
@@ -61,23 +61,13 @@ export default function CartaoCredito() {
         }
     }, [searchParams, cartoes]);
 
-    // 3. Load Faturas when Card changes
+    // 3. Load Transactions when Card or Month changes
     useEffect(() => {
-        if (cartaoSelecionado) {
-            loadFaturas(cartaoSelecionado);
-            // Update URL
+        if (cartaoSelecionado && mesSelecionado) {
+            loadTransacoes(cartaoSelecionado, mesSelecionado);
             setSearchParams({ id: cartaoSelecionado });
         }
-    }, [cartaoSelecionado]);
-
-    // 4. Load Transactions when Fatura changes
-    useEffect(() => {
-        if (faturaSelecionada) {
-            loadTransacoesFatura(faturaSelecionada);
-        } else {
-            setTransacoesFatura([]);
-        }
-    }, [faturaSelecionada]);
+    }, [cartaoSelecionado, mesSelecionado]);
 
     const loadCartoes = async () => {
         try {
@@ -85,20 +75,30 @@ export default function CartaoCredito() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Usuário não autenticado");
 
+            // Load accounts that could be credit cards (tipo_conta can indicate this)
             const { data, error } = await supabase
                 .from("contas_bancarias")
                 .select("*")
                 .eq("user_id", user.id)
-                .eq("is_credit_card", true)
                 .eq("ativo", true)
                 .order("nome_banco");
 
             if (error) throw error;
-            setCartoes(data || []);
-        } catch (error: any) {
+            
+            // Filter for credit card type accounts
+            const creditCards = (data || []).filter(c => 
+                c.tipo_conta === 'credito' || 
+                c.nome_banco?.toLowerCase().includes('cartão') ||
+                c.nome_banco?.toLowerCase().includes('cartao') ||
+                c.nome_banco?.toLowerCase().includes('credit')
+            );
+            
+            setCartoes(creditCards.length > 0 ? creditCards : data || []);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
             toast({
                 title: "Erro ao carregar cartões",
-                description: error.message,
+                description: errorMessage,
                 variant: "destructive",
             });
         } finally {
@@ -106,52 +106,16 @@ export default function CartaoCredito() {
         }
     };
 
-    const loadFaturas = async (contaId: string) => {
-        try {
-            const { data, error } = await supabase
-                .from("faturas")
-                .select("*")
-                .eq("conta_bancaria_id", contaId)
-                .order("data_vencimento", { ascending: false });
-
-            if (error) throw error;
-
-            setFaturas(data || []);
-
-            // Auto-select the latest open or future bill, or just the first one
-            if (data && data.length > 0) {
-                // Try to find the current/latest open bill
-                const currentBill = data.find(f => f.status === 'OPEN') || data[0];
-                setFaturaSelecionada(currentBill.id);
-            } else {
-                setFaturaSelecionada("");
-            }
-        } catch (error: any) {
-            console.error("Error loading faturas:", error);
-            toast({
-                title: "Erro ao carregar faturas",
-                description: error.message,
-                variant: "destructive",
-            });
-        }
-    };
-
-    const loadTransacoesFatura = async (faturaId: string) => {
+    const loadTransacoes = async (contaId: string, mes: string) => {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // Find the selected fatura to get dates if needed (as fallback)
-            const fatura = faturas.find(f => f.id === faturaId);
-            if (!fatura) return;
+            const [year, month] = mes.split('-').map(Number);
+            const startDate = startOfMonth(new Date(year, month - 1));
+            const endDate = endOfMonth(new Date(year, month - 1));
 
-            // Fetch transactions linked to this bill_id
-            // We also fetch transactions that might fall into the date range if bill_id is missing, 
-            // BUT user specifically asked for "transactions inside that invoice", so strict bill_id is better if available.
-            // However, legacy transactions might not have bill_id. 
-            // Let's stick to bill_id for now as per the new sync logic.
-
-            let query = supabase
+            const { data, error } = await supabase
                 .from("transacoes")
                 .select(`
                     id,
@@ -159,62 +123,35 @@ export default function CartaoCredito() {
                     descricao,
                     valor,
                     tipo,
-                    categoria_original,
                     categoria:categoria_id(nome),
-                    contraparte:contraparte_id(nome),
-                    metadata
+                    contraparte:contraparte_id(nome)
                 `)
                 .eq("user_id", user.id)
-                .eq("conta_bancaria_id", cartaoSelecionado)
+                .eq("conta_bancaria_id", contaId)
+                .gte("data_transacao", format(startDate, "yyyy-MM-dd"))
+                .lte("data_transacao", format(endDate, "yyyy-MM-dd"))
                 .order("data_transacao", { ascending: false });
 
-            // Ideally we filter by bill_id
-            // query = query.eq('bill_id', fatura.pluggy_id); // Wait, bill_id in transactions is likely the Pluggy ID, not our internal UUID?
-            // Let's check the sync logic. 
-            // In sync: `billId = metadata.billId`. This is the Pluggy ID.
-            // In faturas table: `pluggy_id` is the Pluggy ID.
-            // So we should match `metadata->>billId` or `bill_id` column if it exists and stores Pluggy ID.
-            // The `transacoes` table has a `bill_id` column (text)? Let's assume yes from previous context or use metadata.
-            // Actually, in the sync code I wrote: `bill_id: billId` where `billId` comes from metadata.
-
-            if (fatura.pluggy_id) {
-                query = query.eq('bill_id', fatura.pluggy_id);
-            } else {
-                // Fallback for manual bills or legacy: use date range
-                // This is risky if dates overlap, but better than nothing
-                if (fatura.data_fechamento && fatura.data_vencimento) {
-                    // Approximate range: Closing date of previous month + 1 day TO Closing date of this month
-                    // This is complex to calculate without previous bill.
-                    // For now, let's rely on bill_id as the primary method requested.
-                    console.warn("Fatura sem pluggy_id, não é possível filtrar por ID exato.");
-                }
-            }
-
-            const { data, error } = await query;
-
             if (error) throw error;
-            setTransacoesFatura(data as any || []);
-        } catch (error: any) {
+            setTransacoes((data as unknown as Transacao[]) || []);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
             console.error("Error loading transactions:", error);
             toast({
                 title: "Erro ao carregar transações",
-                description: error.message,
+                description: errorMessage,
                 variant: "destructive",
             });
         }
     };
 
-    const currentFatura = faturas.find(f => f.id === faturaSelecionada);
-
-    const totalDespesas = transacoesFatura
-        .filter(t => t.tipo === 'saída')
+    const totalDespesas = transacoes
+        .filter(t => t.tipo === 'despesa')
         .reduce((acc, t) => acc + t.valor, 0);
 
-    const totalCreditos = transacoesFatura
-        .filter(t => t.tipo === 'entrada')
+    const totalReceitas = transacoes
+        .filter(t => t.tipo === 'receita')
         .reduce((acc, t) => acc + t.valor, 0);
-
-    const totalFatura = Math.abs(totalDespesas) - Math.abs(totalCreditos);
 
     if (loading) {
         return (
@@ -231,12 +168,12 @@ export default function CartaoCredito() {
                     <CardHeader>
                         <CardTitle>Cartões de Crédito</CardTitle>
                         <CardDescription>
-                            Você ainda não possui cartões de crédito conectados.
+                            Você ainda não possui contas cadastradas.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <p className="text-sm text-muted-foreground">
-                            Conecte um cartão de crédito através da página de Contas para começar a acompanhar suas faturas.
+                            Cadastre uma conta bancária através da página de Contas para começar.
                         </p>
                     </CardContent>
                 </Card>
@@ -246,15 +183,15 @@ export default function CartaoCredito() {
 
     return (
         <div className="container mx-auto py-10 space-y-6">
-            {/* Header com seleção de cartão e fatura */}
+            {/* Header with card and month selection */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold">Cartões de Crédito</h1>
-                    <p className="text-muted-foreground">Gerencie suas faturas e transações</p>
+                    <p className="text-muted-foreground">Gerencie suas transações por mês</p>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4">
-                    {/* Seletor de Cartão */}
+                    {/* Card Selector */}
                     <Select value={cartaoSelecionado} onValueChange={setCartaoSelecionado}>
                         <SelectTrigger className="w-[250px]">
                             <SelectValue placeholder="Selecione um cartão" />
@@ -271,20 +208,17 @@ export default function CartaoCredito() {
                         </SelectContent>
                     </Select>
 
-                    {/* Seletor de Fatura */}
-                    <Select value={faturaSelecionada} onValueChange={setFaturaSelecionada} disabled={faturas.length === 0}>
-                        <SelectTrigger className="w-[250px]">
-                            <SelectValue placeholder={faturas.length === 0 ? "Nenhuma fatura encontrada" : "Selecione uma fatura"} />
+                    {/* Month Selector */}
+                    <Select value={mesSelecionado} onValueChange={setMesSelecionado}>
+                        <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Selecione o mês" />
                         </SelectTrigger>
                         <SelectContent>
-                            {faturas.map((fatura) => (
-                                <SelectItem key={fatura.id} value={fatura.id}>
+                            {mesesDisponiveis.map((mes) => (
+                                <SelectItem key={mes} value={mes}>
                                     <div className="flex items-center gap-2">
-                                        <Receipt className="w-4 h-4" />
-                                        {fatura.data_vencimento ? format(new Date(fatura.data_vencimento), "MMMM yyyy", { locale: ptBR }) : "Sem data"}
-                                        <span className="text-xs text-muted-foreground ml-1">
-                                            ({fatura.status === 'OPEN' ? 'Aberta' : 'Fechada'})
-                                        </span>
+                                        <Calendar className="w-4 h-4" />
+                                        {format(new Date(mes + "-01"), "MMMM yyyy", { locale: ptBR })}
                                     </div>
                                 </SelectItem>
                             ))}
@@ -293,66 +227,54 @@ export default function CartaoCredito() {
                 </div>
             </div>
 
-            {currentFatura && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-sm font-medium flex items-center gap-2">
-                                <Calendar className="w-4 h-4" />
-                                Vencimento
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold text-amber-600">
-                                {currentFatura.data_vencimento ? format(new Date(currentFatura.data_vencimento), "dd/MM/yyyy") : "-"}
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1">
-                                Fechamento: {currentFatura.data_fechamento ? format(new Date(currentFatura.data_fechamento), "dd/MM/yyyy") : "-"}
-                            </p>
-                        </CardContent>
-                    </Card>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium">Total de Despesas</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-red-600">
+                            R$ {totalDespesas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </div>
+                    </CardContent>
+                </Card>
 
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-sm font-medium">Status</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold">
-                                {currentFatura.status === 'OPEN' ? 'Aberta' :
-                                    currentFatura.status === 'PAID' ? 'Paga' :
-                                        currentFatura.status === 'OVERDUE' ? 'Vencida' : currentFatura.status}
-                            </div>
-                        </CardContent>
-                    </Card>
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium">Total de Receitas</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-green-600">
+                            R$ {totalReceitas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </div>
+                    </CardContent>
+                </Card>
 
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-sm font-medium">Total da Fatura (Estimado)</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold text-red-600">
-                                R$ {totalFatura.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1">
-                                Valor Oficial: R$ {currentFatura.valor_total?.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) || "-"}
-                            </p>
-                        </CardContent>
-                    </Card>
-                </div>
-            )}
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium">Transações</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {transacoes.length}
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
 
-            {/* Lista de transações da fatura */}
+            {/* Transactions List */}
             <Card>
                 <CardHeader>
                     <CardTitle>Transações</CardTitle>
                     <CardDescription>
-                        {transacoesFatura.length} transações encontradas nesta fatura
+                        {transacoes.length} transações em {format(new Date(mesSelecionado + "-01"), "MMMM yyyy", { locale: ptBR })}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {transacoesFatura.length === 0 ? (
+                    {transacoes.length === 0 ? (
                         <p className="text-center text-muted-foreground py-8">
-                            Nenhuma transação encontrada para esta fatura.
+                            Nenhuma transação encontrada para este período.
                         </p>
                     ) : (
                         <Table>
@@ -360,14 +282,13 @@ export default function CartaoCredito() {
                                 <TableRow>
                                     <TableHead>Data</TableHead>
                                     <TableHead>Descrição</TableHead>
-                                    <TableHead>Estabelecimento</TableHead>
-                                    <TableHead>Categoria (Original)</TableHead>
-                                    <TableHead>Categoria (Auri)</TableHead>
+                                    <TableHead>Contraparte</TableHead>
+                                    <TableHead>Categoria</TableHead>
                                     <TableHead className="text-right">Valor</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {transacoesFatura.map((transacao) => (
+                                {transacoes.map((transacao) => (
                                     <TableRow key={transacao.id}>
                                         <TableCell className="text-sm whitespace-nowrap">
                                             {new Date(transacao.data_transacao).toLocaleDateString("pt-BR")}
@@ -375,9 +296,6 @@ export default function CartaoCredito() {
                                         <TableCell className="font-medium">{transacao.descricao}</TableCell>
                                         <TableCell className="text-sm">
                                             {transacao.contraparte?.nome || "-"}
-                                        </TableCell>
-                                        <TableCell className="text-sm text-muted-foreground">
-                                            {transacao.categoria_original || "-"}
                                         </TableCell>
                                         <TableCell className="text-sm">
                                             {transacao.categoria?.nome ? (
@@ -389,23 +307,10 @@ export default function CartaoCredito() {
                                             )}
                                         </TableCell>
                                         <TableCell className="text-right whitespace-nowrap">
-                                            <div className="flex items-center justify-end gap-1">
-                                                {transacao.tipo === 'saída' ? (
-                                                    <>
-                                                        <TrendingDown className="w-4 h-4 text-red-500" />
-                                                        <span className="text-red-600 font-medium">
-                                                            R$ {Math.abs(transacao.valor).toFixed(2)}
-                                                        </span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <TrendingUp className="w-4 h-4 text-green-500" />
-                                                        <span className="text-green-600 font-medium">
-                                                            R$ {Math.abs(transacao.valor).toFixed(2)}
-                                                        </span>
-                                                    </>
-                                                )}
-                                            </div>
+                                            <span className={transacao.tipo === 'despesa' ? 'text-red-600' : 'text-green-600'}>
+                                                {transacao.tipo === 'despesa' ? '-' : '+'}
+                                                R$ {transacao.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                                            </span>
                                         </TableCell>
                                     </TableRow>
                                 ))}

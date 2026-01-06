@@ -10,31 +10,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Users, UserCheck, UserX, Search, Receipt, Building2, Check, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, UserCheck, UserX, Search, Receipt, Building2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PendingContrapartesPanel } from "@/components/contrapartes/PendingContrapartesPanel";
 
 interface Contraparte {
   id: string;
   nome: string;
-  // papel: string | null; // Legacy
+  papel: string;
   documento: string | null;
   email: string | null;
   telefone: string | null;
@@ -42,7 +28,6 @@ interface Contraparte {
   observacoes: string | null;
   ativo: boolean;
   created_at: string;
-  contraparte_roles: { role: string }[];
 }
 
 export default function Contatos() {
@@ -52,7 +37,7 @@ export default function Contatos() {
   const [tabAtiva, setTabAtiva] = useState<"todos" | "clientes" | "fornecedores" | "outros">("todos");
   const [formData, setFormData] = useState({
     nome: "",
-    roles: [] as string[],
+    papel: "fornecedor",
     documento: "",
     email: "",
     telefone: "",
@@ -60,9 +45,6 @@ export default function Contatos() {
     observacoes: "",
     ativo: true,
   });
-  const [availableRoles, setAvailableRoles] = useState<string[]>(['cliente', 'fornecedor', 'empresa', 'titular']);
-  const [rolePopoverOpen, setRolePopoverOpen] = useState(false);
-  const [newRole, setNewRole] = useState("");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -76,23 +58,11 @@ export default function Contatos() {
 
       const { data, error } = await supabase
         .from("contrapartes")
-        .select("*, contraparte_roles(role)")
+        .select("*")
         .eq("user_id", user.user.id)
         .order("nome");
 
       if (error) throw error;
-
-      // Fetch all distinct roles for the filter/selector
-      const { data: rolesData } = await supabase
-        .from('contraparte_roles')
-        .select('role');
-
-      if (rolesData) {
-        const distinctRoles = Array.from(new Set(rolesData.map(r => r.role)));
-        const defaults = ['cliente', 'fornecedor', 'empresa', 'titular'];
-        setAvailableRoles(Array.from(new Set([...defaults, ...distinctRoles])).sort());
-      }
-
       return data as Contraparte[];
     },
   });
@@ -102,30 +72,19 @@ export default function Contatos() {
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) throw new Error("Não autenticado");
 
-      // 1. Insert contraparte
-      const { data: newContact, error } = await supabase.from("contrapartes").insert({
+      const { error } = await supabase.from("contrapartes").insert({
         user_id: user.user.id,
         nome: data.nome,
-        // papel: data.roles.length > 0 ? data.roles[0] : null, // Legacy
+        papel: data.papel,
         documento: data.documento || null,
         email: data.email || null,
         telefone: data.telefone || null,
         endereco: data.endereco || null,
         observacoes: data.observacoes || null,
         ativo: data.ativo,
-      }).select().single();
+      });
 
       if (error) throw error;
-
-      // 2. Insert roles
-      if (data.roles.length > 0) {
-        const rolesToInsert = data.roles.map(r => ({
-          contraparte_id: newContact.id,
-          role: r
-        }));
-        const { error: rolesError } = await supabase.from('contraparte_roles').insert(rolesToInsert);
-        if (rolesError) throw rolesError;
-      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contrapartes"] });
@@ -140,12 +99,11 @@ export default function Contatos() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
-      // 1. Update contraparte details
       const { error } = await supabase
         .from("contrapartes")
         .update({
           nome: data.nome,
-          // papel: data.roles.length > 0 ? data.roles[0] : null, // Legacy
+          papel: data.papel,
           documento: data.documento || null,
           email: data.email || null,
           telefone: data.telefone || null,
@@ -156,23 +114,6 @@ export default function Contatos() {
         .eq("id", id);
 
       if (error) throw error;
-
-      // 2. Update roles (delete all and re-insert)
-      const { error: deleteError } = await supabase
-        .from('contraparte_roles')
-        .delete()
-        .eq('contraparte_id', id);
-
-      if (deleteError) throw deleteError;
-
-      if (data.roles.length > 0) {
-        const rolesToInsert = data.roles.map(r => ({
-          contraparte_id: id,
-          role: r
-        }));
-        const { error: insertError } = await supabase.from('contraparte_roles').insert(rolesToInsert);
-        if (insertError) throw insertError;
-      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contrapartes"] });
@@ -202,7 +143,7 @@ export default function Contatos() {
   const resetForm = () => {
     setFormData({
       nome: "",
-      roles: ["fornecedor"],
+      papel: "fornecedor",
       documento: "",
       email: "",
       telefone: "",
@@ -216,7 +157,7 @@ export default function Contatos() {
   const handleEdit = (contraparte: Contraparte) => {
     setFormData({
       nome: contraparte.nome,
-      roles: contraparte.contraparte_roles.map(r => r.role),
+      papel: contraparte.papel || "fornecedor",
       documento: contraparte.documento || "",
       email: contraparte.email || "",
       telefone: contraparte.telefone || "",
@@ -241,86 +182,42 @@ export default function Contatos() {
     navigate("/transacoes", { state: { contraparteId } });
   };
 
-  const toggleRole = (role: string) => {
-    setFormData(prev => {
-      if (prev.roles.includes(role)) {
-        return { ...prev, roles: prev.roles.filter(r => r !== role) };
-      } else {
-        return { ...prev, roles: [...prev.roles, role] };
-      }
-    });
-  };
-
-  const addNewRole = () => {
-    if (!newRole.trim()) return;
-    const role = newRole.trim().toLowerCase();
-
-    if (!availableRoles.includes(role)) {
-      setAvailableRoles(prev => [...prev, role].sort());
-    }
-
-    if (!formData.roles.includes(role)) {
-      setFormData(prev => ({ ...prev, roles: [...prev.roles, role] }));
-    }
-    setNewRole("");
-  };
-
   const contrapartesFiltradas = contrapartes?.filter((c) => {
     const matchSearch = c.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.documento?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const roles = c.contraparte_roles.map(r => r.role);
     let matchTab = false;
     if (tabAtiva === "todos") {
       matchTab = c.ativo;
     } else if (tabAtiva === "clientes") {
-      matchTab = roles.includes("cliente") && c.ativo;
+      matchTab = c.papel === "cliente" && c.ativo;
     } else if (tabAtiva === "fornecedores") {
-      matchTab = roles.includes("fornecedor") && c.ativo;
+      matchTab = c.papel === "fornecedor" && c.ativo;
     } else if (tabAtiva === "outros") {
-      matchTab = (roles.includes("empresa") || roles.includes("titular") || (!roles.includes("cliente") && !roles.includes("fornecedor"))) && c.ativo;
+      matchTab = c.papel !== "cliente" && c.papel !== "fornecedor" && c.ativo;
     }
 
     return matchSearch && matchTab;
   });
 
-  const getPapelBadges = (roles: { role: string }[]) => {
-    if (!roles || roles.length === 0) return <Badge variant="secondary">Sem papel</Badge>;
-
-    return (
-      <div className="flex flex-wrap gap-1">
-        {roles.map(r => {
-          let variant: "default" | "destructive" | "outline" | "secondary" = "secondary";
-          let className = "";
-
-          if (r.role === "cliente") {
-            variant = "default";
-            className = "bg-green-600 hover:bg-green-700";
-          } else if (r.role === "fornecedor") {
-            variant = "destructive";
-          } else if (r.role === "empresa") {
-            variant = "outline";
-            className = "border-blue-500 text-blue-500";
-          } else if (r.role === "titular") {
-            variant = "outline";
-            className = "border-purple-500 text-purple-500";
-          }
-
-          return (
-            <Badge key={r.role} variant={variant} className={className}>
-              {r.role.charAt(0).toUpperCase() + r.role.slice(1)}
-            </Badge>
-          );
-        })}
-      </div>
-    );
+  const getPapelBadge = (papel: string) => {
+    if (papel === "cliente") {
+      return <Badge className="bg-green-600 hover:bg-green-700">Cliente</Badge>;
+    } else if (papel === "fornecedor") {
+      return <Badge variant="destructive">Fornecedor</Badge>;
+    } else if (papel === "empresa") {
+      return <Badge variant="outline" className="border-blue-500 text-blue-500">Empresa</Badge>;
+    } else if (papel === "titular") {
+      return <Badge variant="outline" className="border-purple-500 text-purple-500">Titular</Badge>;
+    }
+    return <Badge variant="secondary">{papel}</Badge>;
   };
 
   const stats = {
     total: contrapartes?.filter(c => c.ativo).length || 0,
-    clientes: contrapartes?.filter(c => c.ativo && c.contraparte_roles.some(r => r.role === "cliente")).length || 0,
-    fornecedores: contrapartes?.filter(c => c.ativo && c.contraparte_roles.some(r => r.role === "fornecedor")).length || 0,
-    outros: contrapartes?.filter(c => c.ativo && c.contraparte_roles.some(r => r.role === "empresa" || r.role === "titular")).length || 0,
+    clientes: contrapartes?.filter(c => c.ativo && c.papel === "cliente").length || 0,
+    fornecedores: contrapartes?.filter(c => c.ativo && c.papel === "fornecedor").length || 0,
+    outros: contrapartes?.filter(c => c.ativo && c.papel !== "cliente" && c.papel !== "fornecedor").length || 0,
   };
 
   return (
@@ -328,8 +225,7 @@ export default function Contatos() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Contatos</h1>
-          <p className="text-muted-foreground">Gerencie seus parceiros comerciais, empresas e titulares</p>
-          <PendingContrapartesPanel />
+          <p className="text-muted-foreground">Gerencie seus parceiros comerciais</p>
         </div>
         <Dialog open={open} onOpenChange={(isOpen) => {
           setOpen(isOpen);
@@ -357,73 +253,20 @@ export default function Contatos() {
                   />
                 </div>
 
-                <div className="space-y-2 col-span-2">
-                  <Label>Papéis</Label>
-                  <div className="flex flex-wrap gap-2 mb-2 p-2 border rounded-md min-h-[40px]">
-                    {formData.roles.length > 0 ? (
-                      formData.roles.map(role => (
-                        <Badge key={role} variant="secondary" className="flex items-center gap-1">
-                          {role}
-                          <X
-                            className="h-3 w-3 cursor-pointer hover:text-destructive"
-                            onClick={() => toggleRole(role)}
-                          />
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-muted-foreground text-sm italic">Nenhum papel selecionado</span>
-                    )}
-                  </div>
-
-                  <Popover open={rolePopoverOpen} onOpenChange={setRolePopoverOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full justify-start">
-                        <Plus className="mr-2 h-4 w-4" /> Adicionar Papel
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[200px] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Buscar papel..." />
-                        <CommandList>
-                          <CommandEmpty>
-                            <div className="p-2">
-                              <p className="text-xs text-muted-foreground mb-2">Papel não encontrado.</p>
-                              <div className="flex gap-2">
-                                <Input
-                                  value={newRole}
-                                  onChange={(e) => setNewRole(e.target.value)}
-                                  placeholder="Novo papel"
-                                  className="h-7 text-xs"
-                                />
-                                <Button size="sm" className="h-7" onClick={addNewRole}>
-                                  <Plus className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          </CommandEmpty>
-                          <CommandGroup>
-                            {availableRoles.map((role) => (
-                              <CommandItem
-                                key={role}
-                                value={role}
-                                onSelect={() => toggleRole(role)}
-                              >
-                                <div className={cn(
-                                  "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                                  formData.roles.includes(role)
-                                    ? "bg-primary text-primary-foreground"
-                                    : "opacity-50 [&_svg]:invisible"
-                                )}>
-                                  <Check className={cn("h-4 w-4")} />
-                                </div>
-                                <span className="capitalize">{role}</span>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                <div className="space-y-2">
+                  <Label htmlFor="papel">Papel*</Label>
+                  <Select value={formData.papel} onValueChange={(value) => setFormData({ ...formData, papel: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cliente">Cliente</SelectItem>
+                      <SelectItem value="fornecedor">Fornecedor</SelectItem>
+                      <SelectItem value="empresa">Empresa</SelectItem>
+                      <SelectItem value="titular">Titular</SelectItem>
+                      <SelectItem value="ambos">Ambos</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
@@ -432,7 +275,6 @@ export default function Contatos() {
                     id="documento"
                     value={formData.documento}
                     onChange={(e) => setFormData({ ...formData, documento: e.target.value })}
-                    placeholder="000.000.000-00"
                   />
                 </div>
                 <div className="space-y-2">
@@ -450,7 +292,6 @@ export default function Contatos() {
                     id="telefone"
                     value={formData.telefone}
                     onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
-                    placeholder="(00) 00000-0000"
                   />
                 </div>
                 <div className="space-y-2 col-span-2">
@@ -467,10 +308,9 @@ export default function Contatos() {
                     id="observacoes"
                     value={formData.observacoes}
                     onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
-                    rows={3}
                   />
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 col-span-2">
                   <Switch
                     id="ativo"
                     checked={formData.ativo}
@@ -492,76 +332,70 @@ export default function Contatos() {
         </Dialog>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <PendingContrapartesPanel />
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users className="h-4 w-4" /> Total
-            </CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-success" /> Clientes
-            </CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Clientes</CardTitle>
+            <UserCheck className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-success">{stats.clientes}</div>
+            <div className="text-2xl font-bold text-green-600">{stats.clientes}</div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <UserX className="h-4 w-4 text-destructive" /> Fornecedores
-            </CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Fornecedores</CardTitle>
+            <Building2 className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">{stats.fornecedores}</div>
+            <div className="text-2xl font-bold text-red-600">{stats.fornecedores}</div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-blue-500" /> Outros
-            </CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Outros</CardTitle>
+            <UserX className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-500">{stats.outros}</div>
+            <div className="text-2xl font-bold">{stats.outros}</div>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <CardTitle>Lista de Contatos</CardTitle>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 w-64"
-                />
-              </div>
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8"
+              />
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs value={tabAtiva} onValueChange={(v: any) => setTabAtiva(v)}>
+          <Tabs value={tabAtiva} onValueChange={(v) => setTabAtiva(v as typeof tabAtiva)}>
             <TabsList className="mb-4">
               <TabsTrigger value="todos">Todos</TabsTrigger>
               <TabsTrigger value="clientes">Clientes</TabsTrigger>
               <TabsTrigger value="fornecedores">Fornecedores</TabsTrigger>
               <TabsTrigger value="outros">Outros</TabsTrigger>
             </TabsList>
-
             <TabsContent value={tabAtiva}>
               {isLoading ? (
                 <p>Carregando...</p>
@@ -570,7 +404,7 @@ export default function Contatos() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nome</TableHead>
-                      <TableHead>Papéis</TableHead>
+                      <TableHead>Papel</TableHead>
                       <TableHead>Documento</TableHead>
                       <TableHead>Contato</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
@@ -580,23 +414,17 @@ export default function Contatos() {
                     {contrapartesFiltradas?.map((contraparte) => (
                       <TableRow key={contraparte.id}>
                         <TableCell className="font-medium">{contraparte.nome}</TableCell>
-                        <TableCell>{getPapelBadges(contraparte.contraparte_roles)}</TableCell>
-                        <TableCell className="text-muted-foreground">{contraparte.documento || "-"}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          <div className="text-sm">
-                            {contraparte.email && <div>{contraparte.email}</div>}
-                            {contraparte.telefone && <div>{contraparte.telefone}</div>}
-                            {!contraparte.email && !contraparte.telefone && "-"}
+                        <TableCell>{getPapelBadge(contraparte.papel)}</TableCell>
+                        <TableCell>{contraparte.documento || "-"}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col text-sm">
+                            {contraparte.email && <span>{contraparte.email}</span>}
+                            {contraparte.telefone && <span>{contraparte.telefone}</span>}
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleNovaTransacao(contraparte.id)}
-                              title="Nova transação"
-                            >
+                            <Button variant="ghost" size="icon" onClick={() => handleNovaTransacao(contraparte.id)} title="Nova transação">
                               <Receipt className="h-4 w-4" />
                             </Button>
                             <Button variant="ghost" size="icon" onClick={() => handleEdit(contraparte)}>
