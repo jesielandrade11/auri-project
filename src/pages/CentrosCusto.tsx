@@ -18,7 +18,6 @@ interface CentroCusto {
   codigo: string;
   nome: string;
   tipo: string | null;
-  tipo_operacao: 'entrada' | 'saída' | 'ambos';
   orcamento_mensal: number | null;
   ativo: boolean;
   created_at: string;
@@ -31,7 +30,6 @@ export default function CentrosCusto() {
     codigo: "",
     nome: "",
     tipo: "operacional",
-    tipo_operacao: "saída" as 'entrada' | 'saída' | 'ambos',
     orcamento_mensal: "",
     ativo: true,
   });
@@ -60,7 +58,6 @@ export default function CentrosCusto() {
         codigo: data.codigo,
         nome: data.nome,
         tipo: data.tipo,
-        tipo_operacao: data.tipo_operacao,
         orcamento_mensal: data.orcamento_mensal ? parseFloat(data.orcamento_mensal) : null,
         ativo: data.ativo,
       });
@@ -87,7 +84,6 @@ export default function CentrosCusto() {
           codigo: data.codigo,
           nome: data.nome,
           tipo: data.tipo,
-          tipo_operacao: data.tipo_operacao,
           orcamento_mensal: data.orcamento_mensal ? parseFloat(data.orcamento_mensal) : null,
           ativo: data.ativo,
         })
@@ -142,7 +138,6 @@ export default function CentrosCusto() {
       codigo: "",
       nome: "",
       tipo: "operacional",
-      tipo_operacao: "despesa",
       orcamento_mensal: "",
       ativo: true,
     });
@@ -154,7 +149,6 @@ export default function CentrosCusto() {
       codigo: centro.codigo,
       nome: centro.nome,
       tipo: centro.tipo || "operacional",
-      tipo_operacao: centro.tipo_operacao || "despesa",
       orcamento_mensal: centro.orcamento_mensal?.toString() || "",
       ativo: centro.ativo,
     });
@@ -233,31 +227,15 @@ export default function CentrosCusto() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="tipo_operacao">Tipo de Operação</Label>
-                    <Select
-                      value={formData.tipo_operacao}
-                      onValueChange={(value: 'entrada' | 'saída' | 'ambos') => setFormData({ ...formData, tipo_operacao: value })}
-                    >
-                      <SelectTrigger id="tipo_operacao">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="entrada">Entrada</SelectItem>
-                        <SelectItem value="saída">Saída</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="orcamento">Orçamento Mensal</Label>
+                    <Input
+                      id="orcamento"
+                      type="number"
+                      step="0.01"
+                      value={formData.orcamento_mensal}
+                      onChange={(e) => setFormData({ ...formData, orcamento_mensal: e.target.value })}
+                    />
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="orcamento">Orçamento Mensal</Label>
-                  <Input
-                    id="orcamento"
-                    type="number"
-                    step="0.01"
-                    value={formData.orcamento_mensal}
-                    onChange={(e) => setFormData({ ...formData, orcamento_mensal: e.target.value })}
-                  />
                 </div>
                 <div className="flex items-center space-x-2">
                   <Switch
@@ -295,7 +273,6 @@ export default function CentrosCusto() {
                   <TableHead>Código</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Departamento</TableHead>
-                  <TableHead>Operação</TableHead>
                   <TableHead>Orçamento Mensal</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -307,17 +284,12 @@ export default function CentrosCusto() {
                     <TableCell>{centro.codigo}</TableCell>
                     <TableCell className="font-medium">{centro.nome}</TableCell>
                     <TableCell className="capitalize">{centro.tipo}</TableCell>
-                    <TableCell className="capitalize">
-                      {centro.tipo_operacao === 'entrada' && <span className="text-green-600">Entrada</span>}
-                      {centro.tipo_operacao === 'saída' && <span className="text-red-600">Saída</span>}
-                      {centro.tipo_operacao === 'ambos' && <span className="text-blue-600">Ambos</span>}
-                    </TableCell>
                     <TableCell>
                       {centro.orcamento_mensal
                         ? new Intl.NumberFormat("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        }).format(centro.orcamento_mensal)
+                            style: "currency",
+                            currency: "BRL",
+                          }).format(centro.orcamento_mensal)
                         : "-"}
                     </TableCell>
                     <TableCell>

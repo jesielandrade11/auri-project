@@ -110,7 +110,8 @@ serve(async (req) => {
     } catch (err) {
       console.error('Error triggering update:', err);
       // If it's our specific errors, rethrow them
-      if (err.message === 'ITEM_NEEDS_MFA' || err.message === 'ITEM_LOGIN_ERROR') {
+      const errMessage = err instanceof Error ? err.message : '';
+      if (errMessage === 'ITEM_NEEDS_MFA' || errMessage === 'ITEM_LOGIN_ERROR') {
         throw err;
       }
     }
@@ -296,7 +297,7 @@ serve(async (req) => {
                 if (!accountBillsMap.has(internalAccountId)) {
                   accountBillsMap.set(internalAccountId, []);
                 }
-                accountBillsMap.get(internalAccountId).push(bill);
+                accountBillsMap.get(internalAccountId)!.push(bill);
 
                 const { error: billError } = await supabase
                   .from('faturas')
@@ -796,7 +797,7 @@ serve(async (req) => {
                 if (!accountBillsMap.has(internalAccountId)) {
                   accountBillsMap.set(internalAccountId, []);
                 }
-                accountBillsMap.get(internalAccountId).push(bill);
+                accountBillsMap.get(internalAccountId)!.push(bill);
 
                 const { error: billError } = await supabase
                   .from('faturas')
