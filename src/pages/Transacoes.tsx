@@ -294,21 +294,9 @@ export default function Transacoes() {
       // Ordenar por data de vencimento
       aVencer.sort((a, b) => new Date(a.data_vencimento).getTime() - new Date(b.data_vencimento).getTime());
 
-      // Buscar possíveis duplicatas
-      const { data: duplicatasData, error: duplicatasError } = await supabase
-        .from("transacoes")
-        .select(`
-          *,
-          categoria:categoria_id(nome, icone,cor),
-          centro_custo:centro_custo_id(nome, codigo),
-          conta:conta_bancaria_id(nome_banco),
-          contraparte:contrapartes(nome)
-        `)
-        .eq("user_id", user.id)
-        .eq("possivel_duplicata", true)
-        .order("data_transacao", { ascending: false });
-
-      if (duplicatasError) console.error("Error loading duplicates:", duplicatasError);
+      // Duplicatas are handled by the DuplicateTransactionsPanel component
+      // We'll just set an empty array for now since the column doesn't exist
+      const duplicatasData: TransacaoComDados[] = [];
 
       setTransacoes(transacoesPagas || []);
       setTransacoesAVencer(aVencer);

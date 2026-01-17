@@ -185,7 +185,8 @@ export default function Contas() {
         saldo_inicial: '',
         integrationType: 'manual',
         provider: '',
-        closing_day: ''
+        closing_day: '',
+        due_day: ''
       });
       loadContas();
     } catch (error) {
@@ -250,7 +251,8 @@ export default function Contas() {
         saldo_inicial: '',
         integrationType: 'manual',
         provider: '',
-        closing_day: ''
+        closing_day: '',
+        due_day: ''
       });
 
     } catch (error: any) {
