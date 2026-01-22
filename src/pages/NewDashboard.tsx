@@ -8,6 +8,9 @@ import { ExpensesCategoryChart } from "@/components/dashboard/ExpensesCategoryCh
 import { ProfitabilityGauges } from "@/components/dashboard/ProfitabilityGauges";
 import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
+import { RevenueExpenseComparison } from "@/components/dashboard/RevenueExpenseComparison";
+import { TopTransactions } from "@/components/dashboard/TopTransactions";
+import { FinancialHealthScore } from "@/components/dashboard/FinancialHealthScore";
 import { useQuery } from "@tanstack/react-query";
 import { format, parseISO, differenceInDays, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval, startOfWeek, endOfWeek, endOfMonth, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -250,6 +253,24 @@ const NewDashboard = () => {
   const dadosFluxo = prepararDadosFluxo();
   const dadosCategoria = prepararDadosCategoria();
 
+  // Dados para comparativo Receitas vs Despesas
+  const dadosComparativo = dadosFluxo.map((d) => ({
+    periodo: d.periodo,
+    receitas: d.receitas,
+    despesas: d.despesas,
+  }));
+
+  // Top transações
+  const topReceitas = [...transacoes]
+    .filter((t) => t.tipo === "receita")
+    .sort((a, b) => Number(b.valor) - Number(a.valor))
+    .slice(0, 5);
+
+  const topDespesas = [...transacoes]
+    .filter((t) => t.tipo === "despesa")
+    .sort((a, b) => Number(b.valor) - Number(a.valor))
+    .slice(0, 5);
+
   // Dados de rentabilidade
   const dadosRentabilidade = {
     margemBruta: kpiData.margens.operacional + 15, // Simulação
@@ -258,6 +279,11 @@ const NewDashboard = () => {
     pontoEquilibrio: kpiData.gastosOperacionais / 0.7, // Simulação
     faturamentoAtual: kpiData.faturamentoBruto,
   };
+
+  // Percentual de despesas sobre receitas
+  const percentualDespesas = kpiData.faturamentoBruto > 0 
+    ? (kpiData.gastosOperacionais / kpiData.faturamentoBruto) * 100 
+    : 0;
 
   // Gerar alertas inteligentes
   const alerts = [];
@@ -337,8 +363,29 @@ const NewDashboard = () => {
                 {/* KPIs Principais */}
                 <ExecutiveKPIs data={kpiData} />
 
+                {/* Score de Saúde Financeira */}
+                <FinancialHealthScore
+                  margemOperacional={kpiData.margens.operacional}
+                  diasReserva={kpiData.diasReserva}
+                  percentualDespesas={percentualDespesas}
+                  tendenciaReceitas={kpiData.variacoes.faturamento}
+                />
+
+                {/* Comparativo Receitas vs Despesas */}
+                <RevenueExpenseComparison
+                  data={dadosComparativo}
+                  totalReceitas={kpiData.faturamentoBruto}
+                  totalDespesas={kpiData.gastosOperacionais}
+                />
+
                 {/* Gráfico de Fluxo de Caixa */}
                 <CashFlowChart data={dadosFluxo} granularidade={filters.granularidade} />
+
+                {/* Maiores Movimentações */}
+                <TopTransactions
+                  receitas={topReceitas as any}
+                  despesas={topDespesas as any}
+                />
 
                 {/* Despesas por Categoria */}
                 <ExpensesCategoryChart data={dadosCategoria} totalDespesas={kpiData.gastosOperacionais} />
