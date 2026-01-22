@@ -144,7 +144,7 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const redirectUrl = `${window.location.origin}/login`;
+      const redirectUrl = `${window.location.origin}/reset-password`;
       
       const { error } = await supabase.auth.resetPasswordForEmail(validation.data.email, {
         redirectTo: redirectUrl,
